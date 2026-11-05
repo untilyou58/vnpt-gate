@@ -1,0 +1,6 @@
+# Ngoại lệ của repo VNPTNAN_GATE. Mỗi dòng: rule-id  regex-đường-dẫn  người-duyệt  lý-do
+g-secret-aws	^(cli/vnptnan-gate|tests/run-tests\.sh|installer/install-server\.sh)$	ATTT	Khoá mẫu AKIAIOSFODNN7EXAMPLE của AWS dùng để tự kiểm tra engine
+g-secret-gitlab	^tests/run-tests\.sh$	ATTT	Token giả trong ca kiểm thử
+g-secret-slack	^tests/run-tests\.sh$	ATTT	Token giả trong ca kiểm thử
+g-secret-password	^tests/run-tests\.sh$	ATTT	Mật khẩu giả trong ca kiểm thử lệnh test
+g-secret-aws	^\.github/workflows/ci\.yml$	ATTT	Khoá mẫu AKIAIOSFODNN7EXAMPLE của AWS để thử hook trên Windows trong CI

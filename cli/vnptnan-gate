@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Lệnh vnptnan-gate: giao diện dòng lệnh của Cổng kiểm soát ATBMTT.
+set -u
+ROOT=${VNPTNAN_GATE_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+. "$ROOT/engine/gate-lib.sh"
+
+usage() {
+  cat <<EOF
+vnptnan-gate $GATE_VERSION — Cổng kiểm soát ATBMTT khi dùng AI trong phát triển phần mềm
+
+  vnptnan-gate scan                 quét thay đổi đã stage (như pre-commit)
+  vnptnan-gate scan tree [thư-mục]  quét toàn bộ repo (đánh giá repo cũ trước khi bật cổng)
+  vnptnan-gate scan range A B       quét các commit A..B (như pre-push)
+  vnptnan-gate deps [thư-mục]       kiểm dependency và giấy phép
+  vnptnan-gate test "<dòng>"        xem rule nào khớp một dòng nội dung hoặc một đường dẫn, không ghi log
+  vnptnan-gate report [số-ngày]     thống kê phát hiện trên máy này (mặc định 7 ngày)
+  vnptnan-gate doctor               kiểm tra cài đặt: hook, rule, log, cùng tồn tại với VNPTNAN_HARNESS
+  vnptnan-gate tools                in danh mục công cụ AI được phép
+  vnptnan-gate install-hooks        cài hook vào .git/hooks của repo hiện tại (khi không cài cấp máy)
+  vnptnan-gate version
+EOF
+}
+
+cmd=${1:-help}; shift || true
+case "$cmd" in
+  scan)
+    sub=${1:-staged}; shift || true
+    case "$sub" in
+      staged|"") exec bash "$ROOT/engine/gate-scan.sh" staged ;;
+      tree)      exec bash "$ROOT/engine/gate-scan.sh" tree "${1:-.}" ;;
+      range)     exec bash "$ROOT/engine/gate-scan.sh" range "$@" ;;
+      commit)    exec bash "$ROOT/engine/gate-scan.sh" commit "$@" ;;
+      *) usage; exit 2 ;;
+    esac ;;
+  deps) exec bash "$ROOT/engine/gate-scan.sh" deps "${1:-.}" ;;
+  test)
+    text=${1:-}; [ -n "$text" ] || { usage; exit 2; }
+    gate_load_conf ""; gate_load_rules || exit 2
+    GATE_LOG=/dev/null; GATE_QUIET=0
+    tmp=$(mktemp); printf '%s\n' "$text" > "$tmp"
+    echo "Xét như đường dẫn:"; gate_scan_file "$text" /dev/null /dev/null 0
+    echo "Xét như một dòng nội dung:"; gate_scan_file "test.txt" "$tmp" "$tmp" ${#text}
+    rm -f "$tmp"
+    [ "$GATE_N_BLOCK" = 0 ] && [ "$GATE_N_WARN" = 0 ] && echo "  không rule nào khớp"
+    exit 0 ;;
+  report)
+    days=${1:-7}; gate_load_conf ""
+    [ -f "$GATE_LOG" ] || { echo "Chưa có log tại $GATE_LOG"; exit 0; }
+    since=$(date -u -d "-$days days" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-"$days"d +%Y-%m-%dT%H:%M:%SZ)
+    echo "Phát hiện trong $days ngày (từ $since), log: $GATE_LOG"
+    awk -F'\t' -v s="$since" '$1 >= s' "$GATE_LOG" > "${TMPDIR:-/tmp}/gate-report.$$"
+    echo; echo "Theo quyết định:"; awk -F'\t' '{c[$7]++} END{for(k in c) printf "  %-16s %d\n", k, c[k]}' "${TMPDIR:-/tmp}/gate-report.$$"
+    echo; echo "Theo rule:";       awk -F'\t' '{c[$6" ("$7")"]++} END{for(k in c) printf "  %-40s %d\n", k, c[k]}' "${TMPDIR:-/tmp}/gate-report.$$" | sort -k2 -nr
+    echo; echo "Theo giai đoạn:";  awk -F'\t' '{c[$4]++} END{for(k in c) printf "  %-16s %d\n", k, c[k]}' "${TMPDIR:-/tmp}/gate-report.$$"
+    echo; echo "Theo repo:";       awk -F'\t' '{c[$8]++} END{for(k in c) printf "  %-30s %d\n", k, c[k]}' "${TMPDIR:-/tmp}/gate-report.$$"
+    rm -f "${TMPDIR:-/tmp}/gate-report.$$"; exit 0 ;;
+  doctor)
+    gate_load_conf ""; ok=1
+    echo "VNPTNAN_GATE $GATE_VERSION tại $ROOT"
+    echo "Chế độ: MODE=$GATE_MODE DEPS=$GATE_DEPS LOG=$GATE_LOG"
+    if gate_load_rules; then echo "  [ok] rule: ${#RULE_ID[@]} rule hợp lệ"; else echo "  [LOI] rule không nạp được"; ok=0; fi
+    for h in commit push; do
+      ev=$(git config --system --get "hook.vnptnan-gate-$h.event" 2>/dev/null || git config --global --get "hook.vnptnan-gate-$h.event" 2>/dev/null)
+      if [ -n "$ev" ]; then echo "  [ok] hook cấp máy: vnptnan-gate-$h -> $ev"
+      elif [ -x "$(git rev-parse --git-dir 2>/dev/null)/hooks/pre-$h" ] 2>/dev/null && grep -q vnptnan-gate "$(git rev-parse --git-dir)/hooks/pre-$h"; then echo "  [ok] hook của repo: pre-$h"
+      else echo "  [THIEU] hook pre-$h chưa cài (chạy installer/install.ps1 hoặc vnptnan-gate install-hooks)"; ok=0; fi
+    done
+    if git config --system --get hook.vnptnan-guard.event >/dev/null 2>&1; then
+      echo "  [ok] VNPTNAN_HARNESS pre-push guard có mặt; hai hook dùng tên khác nhau, chạy nối tiếp"
+    else echo "  [i]  VNPTNAN_HARNESS chưa cài trên máy này (không bắt buộc)"; fi
+    printf 'AKIAIOSFODNN7EXAMPLE\n' > "${TMPDIR:-/tmp}/gate-doctor.$$"
+    GATE_LOG=/dev/null GATE_QUIET=1 gate_scan_file probe.txt "${TMPDIR:-/tmp}/gate-doctor.$$" "${TMPDIR:-/tmp}/gate-doctor.$$" 21 2>/dev/null
+    rm -f "${TMPDIR:-/tmp}/gate-doctor.$$"
+    if [ "$GATE_N_BLOCK" -gt 0 ]; then echo "  [ok] engine phát hiện được secret mẫu"; else echo "  [LOI] engine không phát hiện được secret mẫu"; ok=0; fi
+    d=$(dirname "$GATE_LOG"); mkdir -p "$d" 2>/dev/null && touch "$GATE_LOG" 2>/dev/null && echo "  [ok] ghi log được" || { echo "  [LOI] không ghi được log $GATE_LOG"; ok=0; }
+    [ "$ok" = 1 ] && echo "all good" || { echo "có lỗi"; exit 1; } ;;
+  tools)
+    awk -F'\t' '!/^#/ && NF>=3 {printf "  %-28s %-8s %-6s %s\n", $1, $2, $4, $5}' "$ROOT/rules/ai-tools.rules" ;;
+  install-hooks)
+    gd=$(git rev-parse --git-dir 2>/dev/null) || { echo "Không ở trong repo git"; exit 2; }
+    for h in pre-commit pre-push commit-msg; do
+      if [ -f "$gd/hooks/$h" ] && ! grep -q vnptnan-gate "$gd/hooks/$h"; then mv "$gd/hooks/$h" "$gd/hooks/$h.local"; fi
+      { printf '#!/bin/sh\n# vnptnan-gate (cài bằng vnptnan-gate install-hooks)\n'
+        printf '[ -x "$0.local" ] && { "$0.local" "$@" || exit $?; }\n'
+        printf 'VNPTNAN_GATE_HOME="%s" exec sh "%s/hooks/%s" "$@"\n' "$ROOT" "$ROOT" "$h"; } > "$gd/hooks/$h"
+      chmod +x "$gd/hooks/$h"; echo "  đã cài $gd/hooks/$h"
+    done ;;
+  version|--version|-v) echo "VNPTNAN_GATE $GATE_VERSION" ;;
+  help|-h|--help|*) usage ;;
+esac

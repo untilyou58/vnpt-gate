@@ -1,0 +1,13 @@
+{
+  "name": "@vnptnan/gate",
+  "version": "0.0.0",
+  "description": "Cổng kiểm soát an toàn bảo mật thông tin khi dùng AI trong phát triển phần mềm: chặn secret, dữ liệu cá nhân, package bịa ở prompt, commit, push và máy chủ GitLab. Cài: npx @vnptnan/gate",
+  "keywords": ["git-hooks", "secret-scanning", "ai-coding", "claude-code", "codex", "gitlab", "pre-receive", "security"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/GITHUB_REPO.git" },
+  "homepage": "https://github.com/GITHUB_REPO#readme",
+  "bin": { "vnptnan-gate-setup": "bin/cli.js" },
+  "files": ["bin", "engine", "rules", "hooks", "cli", "installer", "server", "ci", "tools/lint-rules.sh", "gate.conf", "policy.json", "VERSION", "README.md", "LICENSE"],
+  "engines": { "node": ">=16.7" },
+  "publishConfig": { "registry": "https://registry.npmjs.org/", "access": "public" }
+}

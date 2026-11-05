@@ -1,0 +1,15 @@
+# Danh mục công cụ AI được phép dùng trong phát triển phần mềm tại Trung tâm. Đây là phụ lục của Bộ quy tắc sử dụng AI.
+# Engine không đọc file này; CLI "vnptnan-gate tools" in ra để dev tra cứu. Sửa qua merge request có lead và ATTT duyệt.
+#
+# Mỗi dòng, ngăn bằng TAB: tool  trạng-thái  loại-tài-khoản  dữ-liệu-tối-đa  ghi-chú
+#   trạng-thái: allowed (được dùng), pilot (thí điểm, có danh sách người dùng), denied (cấm)
+#   dữ-liệu-tối-đa: mức phân loại cao nhất được đưa vào công cụ (xem Bộ quy tắc, mục 4): C0 công khai, C1 nội bộ, C2 hạn chế, C3 mật
+claude-code	allowed	tài khoản tổ chức, không dùng dữ liệu để huấn luyện	C2	Cài VNPTNAN_HARNESS + VNPTNAN_GATE. Mã nguồn dự án được phép; không đưa dữ liệu khách hàng thật.
+codex	allowed	tài khoản tổ chức	C2	Như trên. Hook của Codex chặn thay vì hỏi.
+antigravity	allowed	tài khoản tổ chức	C2	Như trên.
+github-copilot	pilot	tài khoản tổ chức	C2	Chỉ khi dự án dùng GitHub; chưa có hook Harness.
+chatgpt-web	allowed	tài khoản tổ chức hoặc cá nhân đã tắt "cải thiện mô hình"	C1	Chỉ hỏi đáp chung, không dán mã nguồn dự án và không dán dữ liệu khách hàng.
+claude-web	allowed	tài khoản tổ chức hoặc cá nhân	C1	Như chatgpt-web.
+gemini-web	allowed	tài khoản tổ chức hoặc cá nhân	C1	Như chatgpt-web.
+deepseek-web	denied	-	-	Máy chủ ngoài phạm vi kiểm soát, điều khoản dữ liệu không đạt.
+ai-tool-chua-co-trong-danh-muc	denied	-	-	Muốn dùng công cụ mới: gửi đề nghị cho lead, ATTT đánh giá điều khoản dữ liệu rồi bổ sung vào danh mục này.

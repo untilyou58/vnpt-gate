@@ -1,0 +1,53 @@
+# Phát hành: đẩy tag vX.Y.Z (trùng file VERSION) -> chạy toàn bộ ci.yml (cả Windows) -> npm publish có provenance
+# -> GitHub Release kèm file cài một-file và zip cho máy chủ GitLab.
+#
+# Xác thực với npm, chọn một:
+#  - Trusted Publishing (khuyến nghị, không cần token): trên npmjs.com, gói @vnptnan/gate > Settings > Trusted Publisher
+#    > GitHub Actions, khai owner/repo, workflow "release.yml", environment "npm".
+#  - Lần phát hành ĐẦU TIÊN (gói chưa tồn tại nên chưa khai Trusted Publisher được): tạo granular token có quyền
+#    publish, lưu vào secret NPM_TOKEN của environment "npm"; phát hành xong thì khai Trusted Publisher và xoá token.
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: npm            # đặt Required reviewers để mỗi lần phát hành phải có người duyệt
+    permissions:
+      contents: write           # tạo GitHub Release
+      id-token: write           # Trusted Publishing + provenance
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag phải trùng VERSION
+        run: |
+          v=$(tr -d '\r\n' < VERSION)
+          [ "${GITHUB_REF_NAME}" = "v$v" ] || { echo "Tag ${GITHUB_REF_NAME} khác VERSION $v"; exit 1; }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: npm đủ mới cho Trusted Publishing
+        run: npm install -g npm@latest
+      - name: Đóng gói
+        run: |
+          bash tools/build-npm.sh
+          bash tools/build-package.sh
+      - name: npm publish
+        working-directory: dist/npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # Có NPM_TOKEN (lần đầu) thì dùng token; không có thì npm tự dùng Trusted Publishing qua OIDC
+          if [ -n "$NPM_TOKEN" ]; then echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc; fi
+          npm publish --provenance --access public
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.cmd dist/*.zip dist/*.tgz dist/SHA256SUMS.txt --title "$GITHUB_REF_NAME" --generate-notes

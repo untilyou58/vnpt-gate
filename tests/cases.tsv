@@ -1,0 +1,71 @@
+# Ca kiểm thử rule. Cột ngăn bằng TAB: loại  đầu-vào  rule-mong-đợi  mức-mong-đợi
+#   loại: line (một dòng nội dung, tên file test.cs) | path (đường dẫn file)
+#   rule-mong-đợi: id rule phải khớp, hoặc "-" nghĩa là không rule nào được khớp (chống chặn nhầm)
+# --- secret: phải chặn ---
+line	-----BEGIN RSA PRIVATE KEY-----	g-secret-private-key	block
+line	aws_access_key_id = AKIAIOSFODNN7EXAMPLE	g-secret-aws	block
+line	token: ghp_abcdefghijklmnopqrstuvwxyz0123456789	g-secret-github	block
+line	GITLAB_TOKEN=glpat-abcdefghijklmnopqrstuvwx	g-secret-gitlab	block
+line	ANTHROPIC_API_KEY="sk-ant-api03-abcdefghijklmnopqrstuvwxyz"	g-secret-anthropic	block
+line	key = "AIzaSyA1234567890abcdefghijklmnopqrstuv"	g-secret-google	block
+line	slack: xoxb-123456789012-abcdefghijkl	g-secret-slack	block
+line	var jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";	g-secret-jwt	block
+line	url = "postgres://admin:S3cretPass@db.vnpt.local:5432/app"	g-secret-url-cred	block
+line	"ConnectionStrings": { "Default": "Data Source=10.1.2.3:1521/ORCL;User Id=APP;Password=App@2026" }	g-secret-connstring	block
+line	sqlplus app_user/App2026xx@10.1.2.3:1521/APPDB	g-secret-oracle-ezconnect	block
+line	const apiKey = "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6";	g-secret-generic-key	block
+line	password = "Vnpt@NgheAn2026"	g-secret-password	block
+line	headers["Authorization"] = "Bearer eyJabcdefghijklmnopqrstuvwxyz0123456789"	g-secret-bearer	block
+# --- giá trị mẫu: không được chặn ---
+line	password = "changeme"	-	-
+line	password = "${DB_PASSWORD}"	-	-
+line	apiKey = "<your-api-key-here>"	-	-
+line	FAKE_DB_PASSWORD=khong-phai-that	-	-
+line	password = "Vnpt@NgheAn2026"  // gate-allow:g-secret-password fixture test đăng nhập	-	-
+line	var password = GetPassword();	-	-
+line	// PasswordHash = BCrypt.HashPassword(input)	-	-
+line	string connectionString = Configuration.GetConnectionString("Default");	-	-
+line	sqlplus /nolog	-	-
+line	https://docs.gitlab.com/administration/server_hooks/	-	-
+line	integrity: sha512-abcdefghijklmnopqrstuvwxyz0123456789	-	-
+# --- dữ liệu cá nhân ---
+line	CCCD: 040093001234 - Nguyễn Văn A	g-pii-cccd	block
+line	orderId = 040093001234	-	-
+line	Hotline 0912345678 liên hệ phòng Giải pháp	-	-
+# --- hạ tầng nội bộ ---
+line	server = "10.0.12.5"	g-internal-ip	warn
+line	host: app-db.corp.local	g-internal-host	warn
+line	version 10.0.14	-	-
+# --- AI để sót / mã không an toàn ---
+line	// ... existing code ...	g-ai-placeholder	warn
+line	# ... rest of the code	g-ai-placeholder	warn
+line	// TODO: AI-generated, verify this	g-ai-todo	warn
+line	ServicePointManager.ServerCertificateValidationCallback = (a,b,c,d) => true;	g-sast-tls-off	warn
+line	options.AddPolicy("open", p => p.AllowAnyOrigin());	g-sast-cors-any	warn
+line	db.Database.ExecuteSqlRaw("SELECT * FROM t WHERE id=" + id);	g-sast-sql-concat	warn
+line	using var md5 = MD5.Create();	g-sast-weak-hash	warn
+line	db.Database.EnsureDeleted();	g-sast-destructive-code	warn
+line	var evaluation = Evaluate(x);	-	-
+# --- đường dẫn ---
+path	.env	g-path-env	block
+path	backend/.env.production	g-path-env	block
+path	.env.example	-	-
+path	certs/server.pfx	g-path-key	block
+path	deploy/id_rsa.pem	g-path-key	block
+path	SimShop.Api/appsettings.Production.json	g-path-appsettings	block
+path	SimShop.Api/appsettings.Development.json	-	-
+path	wallet/cwallet.sso	g-path-oracle-wallet	block
+path	config/tnsnames.ora	g-path-oracle-net	warn
+path	.claude/settings.local.json	g-path-ai-config	block
+path	.claude/projects/abc/session.jsonl	g-path-ai-session	block
+path	.vnptnanskill/task-3/notes.md	g-path-ai-session	block
+path	.vnptnanbrain/sessions/feature-x/tri-thuc.md	-	-
+path	.claude/settings.json	-	-
+path	src/Program.cs	-	-
+path	data/sim.db	g-path-db-file	warn
+path	.npmrc	g-path-cloud-cred	block
+path	node_modules/x/.env	-	-
+line	sqlplus scott/Tiger2026@ORCL	g-secret-oracle-ezconnect	block
+line	conn = "app_user/App2026xx@db01.corp.local/APPDB"	g-secret-oracle-ezconnect	block
+line	      - uses: actions/setup-node@v4	-	-
+line	      - uses: actions/upload-artifact@v4.1.0	-	-

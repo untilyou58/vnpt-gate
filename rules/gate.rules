@@ -1,0 +1,75 @@
+# Rule của Cổng kiểm soát ATBMTT (VNPTNAN_GATE). Sửa file này phải qua merge request có ATTT duyệt.
+#
+# Mỗi dòng, ngăn bằng TAB: id  level  kind  regex  message
+#   level: block (từ chối commit/push), warn (cho qua, ghi log)
+#   kind:
+#     line    regex so với từng DÒNG ĐƯỢC THÊM trong diff (hoặc mọi dòng khi quét cả cây)
+#     path    regex so với đường dẫn file được thêm/sửa
+#     count   regex field là "N|regex": file có từ N dòng khớp trở lên thì vi phạm (phát hiện dump dữ liệu)
+#     size    regex field là "BYTES|regex": file khớp regex và lớn hơn BYTES thì vi phạm
+#     allow   regex so với dòng nội dung; dòng khớp được bỏ qua mọi rule kind=line (giá trị mẫu, placeholder)
+#     exempt  regex so với đường dẫn; file khớp được bỏ qua mọi rule kind=path
+# Regex: không phân biệt hoa thường, cú pháp POSIX ERE (grep -E). Không dùng \d \w \s \b.
+# Mọi id bắt đầu bằng "g-" để không trùng id của VNPTNAN_HARNESS (company.rules).
+# Các dòng @tên là văn bản engine dùng khi trả lời.
+@block-suffix	Commit/push bị từ chối. Gỡ nội dung vi phạm khỏi thay đổi (hoặc khai ngoại lệ trong .vnptnan-gate/allow.rules qua merge request có ATTT duyệt). Không dùng --no-verify.
+@warn-suffix	Chỉ cảnh báo, đã ghi log. Hãy kiểm tra lại trước khi mở merge request.
+@audit-suffix	Chế độ thí điểm (audit): vi phạm mức block chỉ được ghi log, chưa từ chối.
+
+# ===== 1. Secret và thông tin xác thực (block) =====
+g-secret-private-key	block	line	-----BEGIN ([A-Z]+ )?PRIVATE KEY-----	Khoá bí mật dạng PEM.
+g-secret-aws	block	line	(^|[^A-Z0-9])(AKIA|ASIA)[0-9A-Z]{16}([^A-Z0-9]|$)	AWS access key.
+g-secret-github	block	line	gh[pousr]_[A-Za-z0-9]{36,}	GitHub token.
+g-secret-gitlab	block	line	glpat-[A-Za-z0-9_-]{20,}	GitLab personal access token.
+g-secret-anthropic	block	line	sk-ant-[A-Za-z0-9_-]{20,}	API key Anthropic (Claude).
+g-secret-openai	block	line	sk-(proj-)?[A-Za-z0-9_-]{20,}T3BlbkFJ[A-Za-z0-9_-]{20,}	API key OpenAI.
+g-secret-google	block	line	AIza[0-9A-Za-z_-]{35}	API key Google.
+g-secret-slack	block	line	xox[baprs]-[0-9A-Za-z-]{10,}	Slack token.
+g-secret-telegram	block	line	[0-9]{8,10}:AA[0-9A-Za-z_-]{33}	Telegram bot token.
+g-secret-jwt	block	line	eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}	JSON Web Token thật.
+g-secret-url-cred	block	line	[a-z][a-z0-9+.-]*://[^/:@ "']+:[^@/ "']{3,}@[a-z0-9.-]	Mật khẩu nhúng trong URL (user:pass@host).
+g-secret-connstring	block	line	(data source|server|host|user id|uid)[ ]*=[^;]*;[^#]*(password|pwd)[ ]*=[ ]*[^;"' ]{4,}	Chuỗi kết nối database có mật khẩu.
+g-secret-oracle-ezconnect	block	line	(^|[^a-z0-9_/])[a-z][a-z0-9_$]*/[^@/ \"']{4,}@(([a-z0-9-]+\.)+[a-z]{2,}|[0-9]{1,3}(\.[0-9]{1,3}){3}|[a-z0-9_.-]+:[0-9]{2,5})(:[0-9]+)?(/[a-z0-9_.]+)?([^a-z0-9_.]|$)|(sqlplus|sqlldr|rman|expdp|impdp)[^\"']* [a-z][a-z0-9_$]*/[^@/ \"']{4,}@[a-z0-9_]+	Chuỗi user/mật_khẩu@host/service của Oracle.
+g-secret-generic-key	block	line	(api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key|refresh[_-]?token)["']?[ ]*[:=][ ]*["'][A-Za-z0-9/+_=.-]{16,}["']	Khoá/token gán cứng trong mã.
+g-secret-password	block	line	(password|passwd|pwd|mat[_-]?khau|matkhau)["']?[ ]*[:=][ ]*["'][^"']{6,}["']	Mật khẩu gán cứng trong mã.
+g-secret-basic-auth	block	line	authorization["']?\]?[ ]*[:=][ ]*["']?basic [A-Za-z0-9+/=]{16,}	Header Basic Auth chứa thông tin xác thực.
+g-secret-bearer	block	line	authorization["']?\]?[ ]*[:=][ ]*["']?bearer [A-Za-z0-9._-]{20,}	Header Bearer token thật.
+
+# ===== 2. Dữ liệu cá nhân và dữ liệu khách hàng (Luật BVDLCN 91/2025/QH15) =====
+g-pii-cccd	block	line	(cccd|cmnd|can cuoc|căn cước|so dinh danh|số định danh|citizen[_ ]?id|national[_ ]?id)[^0-9]{0,40}0[0-9]{11}([^0-9]|$)	Số CCCD/định danh cá nhân thật.
+g-pii-phone-bulk	block	count	20|(^|[^0-9])(0|\+84)(3|5|7|8|9)[0-9]{8}([^0-9]|$)	File chứa hàng loạt số điện thoại: dấu hiệu dump dữ liệu khách hàng.
+g-pii-email-bulk	warn	count	50|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}	File chứa hàng loạt địa chỉ email.
+g-pii-cccd-bulk	block	count	10|(^|[^0-9])0[0-9]{11}([^0-9]|$)	File chứa hàng loạt số 12 chữ số: dấu hiệu dump CCCD.
+g-data-dump	warn	size	1048576|\.(sql|dmp|dump|bak|csv|tsv|xlsx?|json)$	File dữ liệu lớn hơn 1 MB: kiểm tra có phải dữ liệu thật của khách hàng không.
+
+# ===== 3. Thông tin hạ tầng nội bộ (warn) =====
+g-internal-ip	warn	line	(^|[^0-9.])(10\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.[0-9]{1,3}\.[0-9]{1,3}([^0-9.]|$)	Địa chỉ IP mạng nội bộ trong mã nguồn.
+g-internal-host	warn	line	[a-z0-9-]+\.(vnpt\.vn|vnpt\.local|vnptna\.local|nghean\.local|corp\.local)	Tên máy chủ nội bộ trong mã nguồn.
+
+# ===== 4. File không được đưa vào repo (path) =====
+g-path-env	block	path	(^|/)\.env(\.[^/]+)?$	File .env chứa secret.
+g-path-key	block	path	\.(pem|key|pfx|p12|jks|keystore|ppk|asc|gpg|kdbx)$	File khoá bí mật.
+g-path-cloud-cred	block	path	(^|/)(\.aws/credentials|\.git-credentials|\.docker/config\.json|\.kube/config|\.npmrc|\.pypirc|\.netrc|_netrc)$	File credential của công cụ.
+g-path-appsettings	block	path	(^|/)appsettings\.(production|staging|prod)[^/]*\.json$	Cấu hình môi trường thật có thể chứa secret.
+g-path-oracle-wallet	block	path	(^|/)(cwallet\.sso|ewallet\.p12|ewallet\.pem)$	Oracle wallet.
+g-path-oracle-net	warn	path	(^|/)(tnsnames\.ora|sqlnet\.ora|ldap\.ora)$	Cấu hình mạng Oracle lộ địa chỉ máy chủ.
+g-path-ai-config	block	path	(^|/)(\.claude/settings\.local\.json|\.claude\.json|\.codex/auth\.json|\.codex/config\.toml|\.gemini/oauth_creds\.json|\.mcp\.json|\.cursor/mcp\.json)$	Cấu hình cục bộ của công cụ AI thường chứa token.
+g-path-ai-session	block	path	(^|/)(\.claude/projects/|\.claude/history\.jsonl|\.codex/sessions/|\.codex/history\.jsonl|\.vnptnanskill/)	Bản ghi phiên làm việc với AI chứa toàn bộ ngữ cảnh, không đưa lên repo.
+g-path-db-file	warn	path	\.(dmp|bak|mdf|ldf|sqlite|db)$	File database: kiểm tra có dữ liệu thật không.
+g-exempt-sample	block	exempt	\.(example|sample|template|dist)(\.[a-z]+)?$	File mẫu, không chứa secret thật.
+
+# ===== 5. Dấu vết mã do AI sinh ra chưa được rà soát (warn) =====
+g-ai-placeholder	warn	line	(\.\.\. ?(existing|rest of( the)?|remaining|previous) code|(//|#|<!--) ?\.\.\. ?(existing|rest|unchanged)|as an ai (language )?model|i cannot (help|assist) with)	AI để sót đoạn placeholder trong mã.
+g-ai-todo	warn	line	(todo|fixme)[: ]+.*(ai[ -]generated|generated by (ai|claude|codex|copilot|gemini)|verify this)	Mã AI sinh ra có ghi chú chưa được kiểm tra.
+
+# ===== 6. Mẫu mã không an toàn phổ biến khi AI sinh mã (warn, SAST nhẹ) =====
+g-sast-tls-off	warn	line	(ServerCertificateValidationCallback[ ]*=.*true|TrustServerCertificate[ ]*=[ ]*true|rejectUnauthorized[ ]*:[ ]*false|verify[ ]*=[ ]*false|NODE_TLS_REJECT_UNAUTHORIZED[ ]*=[ ]*["']?0)	Tắt kiểm tra chứng thư TLS.
+g-sast-cors-any	warn	line	(AllowAnyOrigin\(\)|Access-Control-Allow-Origin["' ]*[:,][ ]*["']\*)	CORS mở cho mọi origin.
+g-sast-sql-concat	warn	line	(ExecuteSqlRaw|FromSqlRaw|SqlCommand|OracleCommand|\.query)\([^)]*(\+|\$"|string\.Format)	Câu SQL ghép chuỗi: nguy cơ SQL injection.
+g-sast-weak-hash	warn	line	(MD5|SHA1)\.Create\(|createHash\(["'](md5|sha1)["']\)	Thuật toán băm yếu cho mục đích bảo mật.
+g-sast-eval	warn	line	(^|[^a-z_.])(eval|new Function)\(|dangerouslySetInnerHTML|Process\.Start\([^)]*\+	Thực thi mã/lệnh động từ chuỗi.
+g-sast-destructive-code	warn	line	(EnsureDeleted(Async)?\(|Execute(Sql|SqlRaw|SqlInterpolated)[A-Za-z]*\([^)]*(drop|truncate) )	Mã xoá dữ liệu khi chạy (VNPTNAN_HARNESS đã hỏi lúc AI ghi; cổng ghi vết lần nữa trước khi lên repo).
+
+# ===== 7. Giá trị mẫu được bỏ qua (allow) =====
+g-allow-placeholder	warn	allow	(changeme|change_me|your[_-]?(api[_-]?key|token|password|secret)|<[a-z_ -]+>|\$\{[a-z_.:-]+\}|\{\{[a-z_. -]+\}\}|%[A-Z_]+%|xxxx|\*\*\*\*|placeholder|example\.com|dummy|khong-phai-that|(^|["'=: ])(password123|123456|secret123|p@ssw0rd|admin123)(["' ]|$))	Giá trị mẫu, không phải secret thật.
+# Ngoại lệ tại chỗ: thêm "gate-allow:<id-rule> <lý do>" vào chính dòng đó (engine xử lý, chỉ bỏ qua đúng rule đó, vẫn ghi log).

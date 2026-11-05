@@ -1,0 +1,41 @@
+# Mẫu pipeline cho khi GitLab được nâng cấp và bật CI (Harness để "CI" ở mục Để sau; Gate chuẩn bị sẵn).
+# Thêm vào .gitlab-ci.yml của dự án:  include: { project: 'devops/vnptnan-gate', file: 'ci/.gitlab-ci.yml' }
+stages: [gate]
+
+vnptnan-gate:
+  stage: gate
+  image: alpine:3.20
+  variables:
+    GIT_DEPTH: "0"
+    GATE_MODE: enforce
+    GATE_DEPS: block
+    GATE_DEPS_AUDIT: "0"       # bật "1" khi runner có mạng tới registry
+  before_script:
+    - apk add --no-cache bash git grep sed gawk coreutils
+    - git clone --depth 1 "$CI_SERVER_URL/devops/vnptnan-gate.git" /opt/vnptnan-gate || cp -r "$CI_PROJECT_DIR/.vnptnan-gate-src" /opt/vnptnan-gate
+  script:
+    # Merge request: chỉ quét commit của nhánh. Nhánh thường: quét commit mới của lần push.
+    - |
+      if [ -n "$CI_MERGE_REQUEST_DIFF_BASE_SHA" ]; then
+        bash /opt/vnptnan-gate/engine/gate-scan.sh range "$CI_MERGE_REQUEST_DIFF_BASE_SHA" "$CI_COMMIT_SHA" "$CI_COMMIT_REF_NAME"
+      elif [ "$CI_COMMIT_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+        bash /opt/vnptnan-gate/engine/gate-scan.sh range "$CI_COMMIT_BEFORE_SHA" "$CI_COMMIT_SHA" "$CI_COMMIT_REF_NAME"
+      else
+        bash /opt/vnptnan-gate/engine/gate-scan.sh tree .
+      fi
+  artifacts:
+    when: always
+    paths: [gate.log]
+    expire_in: 30 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# Quét toàn bộ cây hằng đêm (schedule) để bắt vi phạm cũ và dependency có lỗ hổng mới công bố.
+vnptnan-gate-nightly:
+  extends: vnptnan-gate
+  variables: { GATE_DEPS_AUDIT: "1" }
+  script:
+    - bash /opt/vnptnan-gate/engine/gate-scan.sh tree .
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"

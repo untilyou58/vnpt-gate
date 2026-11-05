@@ -1,0 +1,4 @@
+{
+  "mode": "audit",
+  "note": "Chế độ áp cho mọi máy không cố định --audit/--enforce. Thí điểm: audit. Ngày 08/12 phát hành bản mới với mode enforce, mọi máy tự chuyển trong 24 giờ."
+}

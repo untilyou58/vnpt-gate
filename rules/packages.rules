@@ -1,0 +1,18 @@
+# Rule về thành phần bên thứ ba (dependency) và giấy phép. Sửa qua merge request có ATTT và Pháp chế duyệt.
+#
+# Mỗi dòng, ngăn bằng TAB: type  level  regex  message
+#   type:
+#     deny-license    regex so với tên giấy phép của package (từ package.json hoặc .nuspec)
+#     deny-package    regex so với tên package (npm hoặc NuGet), không phân biệt hoa thường
+#     allow-registry  regex so với URL registry cho phép (npm registry / NuGet source); nếu có dòng này, URL khác sẽ warn
+#   level: block, warn
+#
+# Giấy phép copyleft mạnh không dùng trong sản phẩm phân phối cho khách hàng (Pháp chế rà theo P0.11 của Harness).
+deny-license	block	^(AGPL|GPL-3|GPL-2|SSPL|EUPL|CC-BY-NC|BUSL)	Giấy phép copyleft/giới hạn thương mại, cần Pháp chế duyệt trước khi dùng.
+deny-license	warn	^(LGPL|MPL|CDDL|EPL|OSL)	Giấy phép copyleft yếu, cần ghi nhận và tuân thủ điều kiện.
+deny-license	warn	^(UNLICENSED|UNKNOWN|SEE LICENSE|NONE)?$	Package không khai giấy phép, không được dùng khi chưa rõ.
+# Package bị gỡ/độc hại hoặc tên hay bị AI bịa (slopsquatting). Bổ sung khi ATTT có thông tin.
+deny-package	block	^(event-stream@3\.3\.6|ua-parser-js@0\.7\.29|colors@1\.4\.1|faker@6\.6\.6|node-ipc@(10\.1\.[12]|9\.2\.2))$	Package có lịch sử bị cài mã độc.
+deny-package	warn	^(request|node-sass|moment|tslint|protractor|bower|gulp-util)$	Package đã ngừng bảo trì (deprecated).
+# Registry cho phép. Khi có registry nội bộ, thêm dòng và chuyển mức sang block.
+allow-registry	warn	^https://(registry\.npmjs\.org|api\.nuget\.org)/	Registry chính thức.

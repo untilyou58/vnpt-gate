@@ -1,0 +1,9 @@
+gate.log
+*.local
+# Sản phẩm build: GitHub Actions tạo lại
+dist/
+node_modules/
+# Tài liệu nội bộ (kế hoạch, báo cáo Lãnh đạo, slide, video): KHÔNG đưa lên repo công khai
+docs/
+slide/
+video/

@@ -1,0 +1,15 @@
+# Ca kiểm thử prompt-check.sh. Cột ngăn bằng TAB: mong-đợi  prompt
+#   mong-đợi: id rule phải xuất hiện trong lý do chặn, hoặc "allow" (không được chặn). \n trong prompt = xuống dòng.
+g-secret-connstring	Sửa lỗi: "Data Source=10.1.2.3/APPDB;User Id=APP;Password=App@2026"
+g-secret-oracle-ezconnect	Chạy giúp: sqlplus app_user/App2026xx@10.1.2.3:1521/APPDB
+g-secret-aws	Khóa AWS của tôi là AKIAIOSFODNN7EXAMPLE, cấu hình giúp
+g-secret-github	token ghp_abcdefghijklmnopqrstuvwxyz0123456789 bị lỗi 401
+g-secret-private-key	-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA
+g-secret-password	password = "Vnpt@NgheAn2026" gate-allow:g-secret-password
+g-pii-cccd	Khách hàng Nguyễn Văn A, CCCD: 040093001234, cần tra cứu
+g-pii-cccd-bulk	Lọc trùng danh sách:\n040093001234\n040093001235\n040093001236\n040093001237\n040093001238\n040093001239\n040093001240\n040093001241\n040093001242\n040093001243
+allow	Viết hàm lọc sim theo đuôi 668 bằng C#
+allow	Giải thích lỗi ORA-12541: TNS no listener
+allow	Đặt password = "${DB_PASSWORD}" lấy từ biến môi trường
+allow	Hotline 0912345678 của phòng Giải pháp có trong README không?
+allow	Server dev ở 10.0.12.5 bị chậm, kiểm tra giúp log

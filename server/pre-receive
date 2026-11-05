@@ -1,0 +1,13 @@
+#!/bin/bash
+# Server hook pre-receive cho GitLab tự host (mọi bậc, kể cả Free): lớp kiểm soát không phụ thuộc máy dev.
+# Cài toàn cục: copy thư mục VNPTNAN_GATE lên máy chủ (ví dụ /opt/vnptnan-gate), rồi
+#   ln -s /opt/vnptnan-gate/server/pre-receive /var/opt/gitlab/gitaly/custom_hooks/pre-receive.d/10-vnptnan-gate
+# Xem installer/install-server.sh. GitLab chỉ hiện ra cho người đẩy những dòng bắt đầu bằng "GL-HOOK-ERR:".
+# stdin: <old> <new> <ref> mỗi dòng. Biến có sẵn: GL_ID GL_USERNAME GL_PROJECT_PATH GL_PROTOCOL GL_REPOSITORY.
+root=${VNPTNAN_GATE_HOME:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
+export GATE_SERVER=1
+export GATE_LOG=${GATE_LOG:-/var/log/vnptnan-gate/gate.log}
+# Trên server không có node_modules hay cache NuGet: chỉ quét nội dung.
+export GATE_DEPS=off
+# Bỏ qua kiểm tra khi push được GitLab tạo (web UI merge, revert) nếu muốn: GL_PROTOCOL=web. Mặc định vẫn quét.
+exec bash "$root/engine/gate-scan.sh" receive

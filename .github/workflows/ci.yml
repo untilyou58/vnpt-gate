@@ -1,0 +1,106 @@
+# Kiểm thử mỗi lần push/PR, và là bước bắt buộc trước khi release.yml phát hành.
+# Job windows cài thật trên máy Windows của GitHub: file setup.cmd, hook git chặn secret, lệnh npm setup/status/uninstall.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cấu hình git cho test
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.invalid
+          git config --global init.defaultBranch main
+      - name: Lint rule
+        run: bash tools/lint-rules.sh
+      - name: Kiểm thử (rule, hook, pre-receive, prompt)
+        run: bash tests/run-tests.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Đóng gói (npm + file cài một-file)
+        run: |
+          bash tools/build-npm.sh
+          bash tools/build-package.sh
+          node dist/npm/bin/cli.js version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/*.tgz
+            dist/*.cmd
+            dist/*.zip
+            dist/SHA256SUMS.txt
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Cài bằng file setup.cmd (enforce)
+        shell: cmd
+        run: |
+          for %%f in (dist\VNPTNAN_GATE-*-setup.cmd) do call "%%f"
+          if errorlevel 1 exit /b 1
+      - name: Hook chặn secret, cho qua commit sạch
+        shell: pwsh
+        run: |
+          $cli = "$env:ProgramData\VNPTNAN_GATE\current\cli\vnptnan-gate.cmd"
+          if (-not (Test-Path $cli)) { throw "Chưa cài: thiếu $cli" }
+          git --version
+          $t = Join-Path $env:RUNNER_TEMP 'repo'; git init -q $t; Set-Location $t
+          git config user.email t@example.invalid; git config user.name t
+          if (-not (git config --system --get hook.vnptnan-gate-commit.event)) {
+            Write-Warning 'Git < 2.54: không có hook cấp máy, dùng install-hooks cho repo'
+            & $cli install-hooks
+          }
+          'AWS_KEY=AKIAIOSFODNN7EXAMPLE' | Out-File -Encoding ascii leak.txt
+          git add leak.txt
+          git commit -q -m leak 2>&1 | Write-Host
+          if ($LASTEXITCODE -eq 0) { throw 'pre-commit KHÔNG chặn secret' }
+          git reset -q
+          '# ok' | Out-File -Encoding ascii ok.md
+          git add ok.md
+          git commit -q -m ok
+          if ($LASTEXITCODE -ne 0) { throw 'commit sạch bị chặn' }
+          & $cli doctor; "doctor rc=$LASTEXITCODE"
+          Write-Host 'Hook trên Windows: đạt'
+      - name: Gỡ bản setup.cmd
+        shell: pwsh
+        run: |
+          $u = Join-Path $env:RUNNER_TEMP 'uninstall.ps1'
+          Copy-Item "$env:ProgramData\VNPTNAN_GATE\current\installer\uninstall.ps1" $u
+          powershell -NoProfile -ExecutionPolicy Bypass -File $u
+          if (Test-Path "$env:ProgramData\VNPTNAN_GATE\current") { throw 'gỡ chưa sạch' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npx setup / status / uninstall (từ gói .tgz vừa build)
+        shell: pwsh
+        run: |
+          $pkg = Join-Path $env:RUNNER_TEMP 'pkg'; New-Item -ItemType Directory $pkg | Out-Null
+          tar -xzf (Get-Item dist\vnptnan-gate-*.tgz).FullName -C $pkg
+          $js = Join-Path $pkg 'package\bin\cli.js'
+          node $js setup --enforce
+          if ($LASTEXITCODE -ne 0) { throw 'setup lỗi' }
+          schtasks /Query /TN 'VNPTNAN_GATE Update' | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'không có lịch tự cập nhật' }
+          Get-Content "$env:ProgramData\VNPTNAN_GATE\current\gate.conf" | Select-String '^MODE='
+          node $js status
+          node $js uninstall
+          if (Test-Path "$env:ProgramData\VNPTNAN_GATE\current") { throw 'gỡ chưa sạch' }
+          schtasks /Query /TN 'VNPTNAN_GATE Update' 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) { throw 'lịch cập nhật còn sau khi gỡ' }
+          $global:LASTEXITCODE = 0
+          Write-Host 'Cài/gỡ qua npm trên Windows: đạt'

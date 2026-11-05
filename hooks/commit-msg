@@ -1,0 +1,10 @@
+#!/bin/sh
+# Hook commit-msg của VNPTNAN_GATE: ghi vết commit có AI tham gia để thống kê và kiểm toán.
+# Nếu thông điệp có trailer Co-Authored-By của một coding agent mà chưa có trailer AI-Assisted, tự thêm "AI-Assisted: <tool>".
+# Không bao giờ từ chối commit.
+msg=$1
+[ -f "$msg" ] || exit 0
+if grep -qiE '^AI-Assisted:' "$msg"; then exit 0; fi
+tool=$(grep -iE '^Co-Authored-By:.*(claude|codex|openai|antigravity|gemini|copilot)' "$msg" | head -n1 | sed -E 's/^Co-Authored-By:[[:space:]]*//I; s/[[:space:]]*<.*//')
+if [ -n "$tool" ]; then printf '\nAI-Assisted: %s\n' "$tool" >> "$msg"; fi
+exit 0
