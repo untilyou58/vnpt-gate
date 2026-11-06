@@ -135,11 +135,33 @@ scan_tree() {
       case "$rel" in *$'\t'*|*$'\n'*) continue ;; esac
       printf '\t%s\t%s\t%s\n' "$dir/$rel" "$dir/$rel" "$rel"
     done < "$TMP/files" > "$TMP/list"
+    local total jobs k prog=0 t0=$SECONDS
+    total=$(wc -l < "$TMP/list" | tr -d ' ')
     # Tiến độ: mặc định chỉ hiện khi chạy trong terminal; GATE_PROGRESS=1 bật, =0 tắt
-    if [ "${GATE_PROGRESS:-auto}" = 1 ] || { [ "${GATE_PROGRESS:-auto}" = auto ] && [ -t 2 ] && [ "${GATE_QUIET:-0}" != 1 ]; }; then
-      GATE_CORE_ARGS+=(--progress "$(wc -l < "$TMP/list" | tr -d ' ')")
+    if [ "${GATE_PROGRESS:-auto}" = 1 ] || { [ "${GATE_PROGRESS:-auto}" = auto ] && [ -t 2 ] && [ "${GATE_QUIET:-0}" != 1 ]; }; then prog=1; fi
+    # Chạy song song: chia file cho tối đa GATE_JOBS tiến trình (mặc định số nhân CPU, tối đa 4)
+    jobs=${GATE_JOBS:-$(nproc 2>/dev/null || echo 1)}; [ "$jobs" -gt 4 ] && [ -z "${GATE_JOBS:-}" ] && jobs=4
+    [ "$total" -lt 200 ] && jobs=1
+    if [ "$jobs" -le 1 ]; then
+      [ "$prog" = 1 ] && GATE_CORE_ARGS+=(--progress "$total")
+      gate_core_rows < <(perl "$GATE_ROOT/engine/scan-core.pl" "${GATE_CORE_ARGS[@]}" --list < "$TMP/list")
+    else
+      # Chia xen kẽ (file lớn nhỏ trải đều); phần 0 vẽ tiến độ ước theo số file của nó x số phần
+      awk -v n="$jobs" -v d="$TMP/part" '{ print > (d "." (NR - 1) % n) }' "$TMP/list"
+      local pids=()
+      for ((k = 0; k < jobs; k++)); do
+        if [ "$k" = 0 ] && [ "$prog" = 1 ]; then
+          perl "$GATE_ROOT/engine/scan-core.pl" "${GATE_CORE_ARGS[@]}" --progress "$total" --progress-scale "$jobs" --list < "$TMP/part.$k" > "$TMP/out.$k" &
+        else
+          perl "$GATE_ROOT/engine/scan-core.pl" "${GATE_CORE_ARGS[@]}" --list < "$TMP/part.$k" > "$TMP/out.$k" 2>/dev/null &
+        fi
+        pids+=($!)
+      done
+      for k in "${pids[@]}"; do wait "$k"; done
+      # Gộp theo đường dẫn để kết quả ổn định như khi chạy một tiến trình
+      gate_core_rows < <(cat "$TMP"/out.* | sort -t "$(printf '\t')" -k3,3 -k4,4n -s)
     fi
-    gate_core_rows < <(perl "$GATE_ROOT/engine/scan-core.pl" "${GATE_CORE_ARGS[@]}" --list < "$TMP/list")
+    [ "$prog" = 1 ] && gate_say "Đã quét $GATE_N_SCANNED file trong $((SECONDS - t0)) giây ($jobs tiến trình); bỏ qua $GATE_N_SKIPPED file theo SKIP_PATHS."
   else
     while IFS= read -r -d '' f; do
       [ -n "$f" ] || continue

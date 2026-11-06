@@ -29,6 +29,7 @@ while (@ARGV) {
   elsif ($a eq '--one')      { @one = splice @ARGV, 0, 4 }
   elsif ($a eq '--list')     { $o{list} = 1 }
   elsif ($a eq '--progress') { $o{progress} = shift @ARGV }   # tổng số file; in tiến độ ra stderr
+  elsif ($a eq '--progress-scale') { $o{pscale} = shift @ARGV }   # chạy song song: phần này x N ~ tổng đã quét
   else { die "scan-core.pl: tham số lạ $a\n" }
 }
 my $MAX = $o{max} || 5242880;
@@ -49,6 +50,12 @@ if ($o{rules} && -f $o{rules}) {
       @$r{qw(n q raw)} = ($n, qr/$rx/i, $rx);
     } else {
       @$r{qw(q raw)} = (qr/$re/i, $re);
+      if ($kind eq 'line') {   # bản lọc trước trên cả file: chữ thường + /m (nhanh gấp 2 lần /i), đầu/cuối dạng lookaround
+        my $x = lc $re;
+        $x =~ s/^\(\^\|\[\^([^\]]+)\]\)/(?<![$1])/;
+        $x =~ s/\(\[\^([^\]]+)\]\|\$\)$/(?![$1])/;
+        $r->{qm} = qr/$x/m;
+      }
     }
     if    ($kind eq 'line')   { push @line, $r }
     elsif ($kind eq 'path')   { push @path, $r }
@@ -83,6 +90,7 @@ if ($o{gl} && -f $o{gl}) {
     if ($r->{_global}) { $glg = $r->{_global}; compile_allow($glg); next }
     next unless $r->{id};
     $r->{q}  = qr/$r->{re}/   if defined $r->{re};
+    $r->{qm} = qr/(?m)$r->{re}/ if defined $r->{re};
     $r->{qp} = qr/$r->{path}/ if defined $r->{path};
     compile_allow($_) for @{ $r->{allow} || [] };
     push @gl, $r;
@@ -185,6 +193,23 @@ sub scan_file {
   my @glc = $glskip ? () : grep { $_->{q} } @glp;
   my @lr = @line;
   for my $k (@skip) { @lr = grep { $_->{id} !~ $k->{ids} } @lr if $p =~ $k->{path} }   # rule kind=skip
+
+  # Lọc trước trên cả file: rule không khớp ở đâu trong file thì không cần thử từng dòng.
+  # Với /m, mọi chỗ khớp trong một dòng cũng khớp trên cả file (bỏ \r trước), nên không bỏ sót.
+  {
+    local $/; my $buf = <$lf>; seek $lf, 0, 0;
+    $buf =~ s/\r//g;
+    my $lcb = lc $buf;
+    @lr = grep { $lcb =~ $_->{qm} } @lr;
+    if (@glc) {
+      @glc = grep {
+        my $r = $_; my $k = !$r->{kw};
+        unless ($k) { for (@{ $r->{kw} }) { if (index($lcb, $_) >= 0) { $k = 1; last } } }
+        $k && $buf =~ $r->{qm};
+      } @glc;
+    }
+  }
+  if (!@lr && !@glc) { close $lf; return }
   my (%cap, $ln);
   while (my $l = <$lf>) {
     $ln++;
@@ -234,10 +259,11 @@ elsif ($o{list}) {
   $| = 1 if $total;   # phát hiện tới bash ngay, không bị dồn sau dòng tiến độ
   my $show = sub {   # một dòng tiến độ, ghi đè bằng \r, tối đa 1 lần/giây
     my ($path) = @_;
-    my $pct = $total ? int(100 * $done / $total) : 0;
+    my $shown = $done * ($o{pscale} || 1); $shown = $total if $shown > $total;
+    my $pct = $total ? int(100 * $shown / $total) : 0;
     my $p = $path // ''; utf8::decode($p);              # cắt theo ký tự, không cắt giữa chữ có dấu
     $p =~ s/^.*(.{40})$/...$1/s;
-    my $msg = sprintf "[VNPTNAN_GATE] \x{110}ang qu\x{e9}t %d/%d file (%d%%) %s", $done, $total, $pct, $p;
+    my $msg = sprintf "[VNPTNAN_GATE] \x{110}ang qu\x{e9}t %d/%d file (%d%%) %s", $shown, $total, $pct, $p;
     my $pad = $PROG_W > length($msg) ? ' ' x ($PROG_W - length($msg)) : '';
     $PROG_W = length $msg;
     my $b = "\r$msg$pad"; utf8::encode($b); print STDERR $b;
@@ -256,11 +282,10 @@ elsif ($o{list}) {
       utf8::encode($b); print STDERR $b;
     }
   }
+  print join("\t", '@stat', $done - ($o{nskip} || 0), $o{nskip} || 0), "\n";   # số file đã quét / bỏ qua
   if ($total) {
     print STDERR "\r", ' ' x $PROG_W, "\r" if $PROG_W;
-    my $b = sprintf "[VNPTNAN_GATE] \x{110}\x{e3} qu\x{e9}t %d file trong %d gi\x{e2}y; b\x{1ecf} qua %d file theo SKIP_PATHS.\n",
-      $done - ($o{nskip} || 0), time - $t0, $o{nskip} || 0;
-    utf8::encode($b); print STDERR $b;
+    # tổng kết do bash in (cộng các phần khi chạy song song)
   }
 }
 exit 0;

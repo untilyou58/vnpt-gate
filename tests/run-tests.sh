@@ -135,14 +135,14 @@ if command -v perl >/dev/null 2>&1; then
     k=$((k + 1)); printf '%s\n' "$enc" | perl -MMIME::Base64 -ne 'print scalar(reverse decode_base64($_)), "\n"' > "$GD/s$k.txt"
     WANT[s$k.txt]=$id; printf '\t%s\t%s\t%s\n' "$GD/s$k.txt" "$GD/s$k.txt" "s$k.txt" >> "$GD/list"
   done < "$ROOT/tests/gitleaks-cases.tsv"
-  perl "$ROOT/engine/scan-core.pl" --gitleaks "$ROOT/rules/gitleaks.jsonl" --list < "$GD/list" | cut -f2,3 | sort -u > "$GD/got"
+  perl "$ROOT/engine/scan-core.pl" --gitleaks "$ROOT/rules/gitleaks.jsonl" --list < "$GD/list" | grep -v "^@stat" | cut -f2,3 | sort -u > "$GD/got"
   miss=0
   for f in "${!WANT[@]}"; do grep -qxF "${WANT[$f]}"$'\t'"$f" "$GD/got" || { miss=$((miss + 1)); [ $miss -le 5 ] && echo "  FAIL: ${WANT[$f]} không bắt được mẫu của chính nó"; }; done
   [ $miss = 0 ] && ok || { FAIL=$((FAIL + 1)); echo "  $miss/$k mẫu không bắt được"; }
   # Chống báo nhầm: mã nguồn của chính bộ công cụ không được khớp rule Gitleaks nào
   ( cd "$ROOT" && git ls-files 2>/dev/null | grep -vE '^(tests/|rules/)' || find . -type f ! -path './.git/*' ! -path './tests/*' ! -path './rules/*' | sed 's|^\./||' ) \
     | while IFS= read -r p; do printf '\t%s\t%s\t%s\n' "$ROOT/$p" "$ROOT/$p" "$p"; done > "$GD/self"
-  fp=$(perl "$ROOT/engine/scan-core.pl" --gitleaks "$ROOT/rules/gitleaks.jsonl" --list < "$GD/self" | grep -v $'\t1\t' | cut -f2,3 | head -n 5)
+  fp=$(perl "$ROOT/engine/scan-core.pl" --gitleaks "$ROOT/rules/gitleaks.jsonl" --list < "$GD/self" | grep -v "^@stat" | grep -v $'\t1\t' | cut -f2,3 | head -n 5)
   [ -z "$fp" ] && ok || fail "rule Gitleaks báo nhầm trên mã của bộ công cụ: $fp"
   echo "  $k mẫu"
   rm -rf "$GD"

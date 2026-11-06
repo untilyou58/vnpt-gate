@@ -223,7 +223,9 @@ gate_core_args() {
 gate_core_rows() {
   # Đọc kết quả của scan-core.pl từ stdin: level id path ln allowed masked msg
   local level id path ln allowed masked msg
+  GATE_N_SCANNED=0; GATE_N_SKIPPED=0
   while IFS=$'\t' read -r level id path ln allowed masked msg; do
+    if [ "$level" = @stat ]; then GATE_N_SCANNED=$((GATE_N_SCANNED + id)); GATE_N_SKIPPED=$((GATE_N_SKIPPED + path)); continue; fi
     [ -n "$id" ] || continue
     if [ "$allowed" = 1 ]; then
       GATE_N_ALLOWED=$((GATE_N_ALLOWED + 1))

@@ -54,7 +54,7 @@ SKIP_PATHS_EXTRA=(^|/)legacy-dump/|(^|/)src/Generated/|\.designer\.cs$
 
 Mặc định đã bỏ qua `node_modules`, `bin`, `obj`, `dist`, `build`, `out`, `packages`, `vendor`, `coverage`, `TestResults`, file `.min.js`/`.map`/lockfile, và file lớn hơn 5 MB. Thư mục bỏ qua thì không bị quét ở mọi điểm: commit, push, máy chủ GitLab, `scan tree`. Vì vậy chỉ bỏ qua thứ thật sự không chứa secret.
 
-`scan tree` hiện tiến độ (`Đang quét 2209/3500 file (63%)`), và khi xong thì báo số file đã bỏ qua theo `SKIP_PATHS`. Đặt `GATE_PROGRESS=0` để tắt dòng tiến độ, `GATE_PROGRESS=1` để bật khi không chạy trong terminal.
+`scan tree` hiện tiến độ (`Đang quét 2209/3500 file (63%)`), chạy song song theo số nhân CPU (tối đa 4; đặt `GATE_JOBS=N` để đổi), báo file nào quét lâu, và khi xong thì báo số file đã bỏ qua theo `SKIP_PATHS`. Đặt `GATE_PROGRESS=0` để tắt dòng tiến độ, `GATE_PROGRESS=1` để bật khi không chạy trong terminal.
 
 ## Phát triển và phát hành
 
