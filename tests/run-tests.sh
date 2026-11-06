@@ -61,6 +61,7 @@ git reset -q .env; rm .env
 printf 'AWS_KEY=AKIAIOSFODNN7EXAMPLE\n' > audit.txt; git add audit.txt
 sed -i "s/^MODE=.*/MODE=audit/" "$TOOL/gate.conf"
 if git commit -q -m "audit" 2>/dev/null; then ok; else fail "audit mode vẫn chặn"; fi
+( cd "$T/work" && VNPTNAN_GATE_HOME=$TOOL bash "$TOOL/cli/vnptnan-gate" doctor 2>&1 ) | grep -q '\[ok\] engine' && ok || fail "doctor ở chế độ audit báo nhầm engine lỗi"
 sed -i "s/^MODE=.*/MODE=enforce/" "$TOOL/gate.conf"
 grep -q $'\taudit\t' "$GATE_LOG" && ok || fail "audit không ghi log"
 # Hạ cổng bằng biến môi trường khi không ở chế độ test: phải KHÔNG có tác dụng

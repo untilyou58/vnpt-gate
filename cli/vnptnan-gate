@@ -63,13 +63,21 @@ case "$cmd" in
       ev=$(git config --system --get "hook.vnptnan-gate-$h.event" 2>/dev/null || git config --global --get "hook.vnptnan-gate-$h.event" 2>/dev/null)
       if [ -n "$ev" ]; then echo "  [ok] hook cấp máy: vnptnan-gate-$h -> $ev"
       elif [ -x "$(git rev-parse --git-dir 2>/dev/null)/hooks/pre-$h" ] 2>/dev/null && grep -q vnptnan-gate "$(git rev-parse --git-dir)/hooks/pre-$h"; then echo "  [ok] hook của repo: pre-$h"
-      else echo "  [THIEU] hook pre-$h chưa cài (chạy installer/install.ps1 hoặc vnptnan-gate install-hooks)"; ok=0; fi
+      else
+        gv=$(git --version 2>/dev/null | sed -E 's/[^0-9]*([0-9]+\.[0-9]+).*/\1/')
+        if [ -n "$gv" ] && [ "$(printf '%s\n2.54\n' "$gv" | sort -V | head -n1)" != 2.54 ]; then
+          echo "  [THIEU] hook pre-$h: Git $gv chưa hỗ trợ hook cấp máy (cần >= 2.54). Nâng Git, hoặc trong từng repo chạy: vnptnan-gate install-hooks"
+        else echo "  [THIEU] hook pre-$h chưa cài (cài lại: npx -y @vnptnan/gate@latest, hoặc trong repo: vnptnan-gate install-hooks)"; fi
+        ok=0; fi
     done
     if git config --system --get hook.vnptnan-guard.event >/dev/null 2>&1; then
       echo "  [ok] VNPTNAN_HARNESS pre-push guard có mặt; hai hook dùng tên khác nhau, chạy nối tiếp"
     else echo "  [i]  VNPTNAN_HARNESS chưa cài trên máy này (không bắt buộc)"; fi
     printf 'AKIAIOSFODNN7EXAMPLE\n' > "${TMPDIR:-/tmp}/gate-doctor.$$"
+    # Thử engine ở chế độ chặn: ở audit, phát hiện mức chặn chỉ được đếm là cảnh báo
+    _mode=$GATE_MODE; GATE_MODE=enforce
     GATE_LOG=/dev/null GATE_QUIET=1 gate_scan_file probe.txt "${TMPDIR:-/tmp}/gate-doctor.$$" "${TMPDIR:-/tmp}/gate-doctor.$$" 21 2>/dev/null
+    GATE_MODE=$_mode
     rm -f "${TMPDIR:-/tmp}/gate-doctor.$$"
     if [ "$GATE_N_BLOCK" -gt 0 ]; then echo "  [ok] engine phát hiện được secret mẫu"; else echo "  [LOI] engine không phát hiện được secret mẫu"; ok=0; fi
     d=$(dirname "$GATE_LOG"); mkdir -p "$d" 2>/dev/null && touch "$GATE_LOG" 2>/dev/null && echo "  [ok] ghi log được" || { echo "  [LOI] không ghi được log $GATE_LOG"; ok=0; }
