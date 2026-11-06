@@ -33,7 +33,7 @@ for (let i = 0; i < argv.length; i++) {
 }
 
 function say(s) { if (!opt.quiet) console.log(s); log(s); }
-function log(s) { try { fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.appendFileSync(LOG, `${new Date().toISOString()}\t${s}\n`); } catch (_) { /* chưa có quyền ghi */ } }
+function log(s) { try { fs.mkdirSync(path.dirname(LOG), { recursive: true }); if (!fs.existsSync(LOG)) fs.writeFileSync(LOG, '\ufeff'); fs.appendFileSync(LOG, `${new Date().toISOString()}\t${s}\n`); } catch (_) { /* chưa có quyền ghi */ } }
 function die(s, code = 1) { console.error(`[VNPTNAN_GATE] ${s}`); log(`LOI\t${s}`); process.exit(code); }
 function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { return null; } }
 const cmpVer = (a, b) => { const x = a.split(/[.-]/).map(Number), y = b.split(/[.-]/).map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); return 0; };
@@ -195,7 +195,9 @@ async function setup() {
   if (!isAdmin()) return elevate(passArgs(s));
   const stage = path.join(HOME, 'staging', PKG.version);
   fs.rmSync(stage, { recursive: true, force: true }); fs.mkdirSync(stage, { recursive: true });
-  fs.cpSync(ROOT, stage, { recursive: true, filter: (p) => !/[\\/]node_modules([\\/]|$)/.test(p) });
+  // Lọc theo đường dẫn TƯƠNG ĐỐI: chạy qua npx thì chính ROOT nằm trong ...\npm-cache\_npx\...\node_modules\@vnptnan\gate
+  fs.cpSync(ROOT, stage, { recursive: true, filter: (p) => !path.relative(ROOT, p).split(/[\\/]/).includes('node_modules') });
+  if (!fs.existsSync(path.join(stage, 'installer', 'install.ps1'))) throw new Error(`Chép bộ cài vào ${stage} không đủ file`);
   const mode = modeFor(s, stage);
   installFrom(stage, mode);
   fs.rmSync(stage, { recursive: true, force: true });
