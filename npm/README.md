@@ -8,7 +8,8 @@ Mã nguồn nằm trên GitHub. GitHub Actions kiểm thử và build. Gói phá
 2. `cli.js` xin quyền admin, chép bộ công cụ vào `%ProgramData%\VNPTNAN_GATE\current` (người dùng và AI chỉ đọc được), rồi đăng ký hook git.
 3. Tạo hai lịch Windows chạy bằng tài khoản SYSTEM: 10:17 hằng ngày và 10 phút sau khi khởi động máy. Cả hai chạy `cli.js update --quiet`.
 4. Khi cập nhật, `cli.js` đọc bản `latest` trên npm. Có bản mới thì tải về, kiểm tra sha512 do npm công bố (sai thì không cài), giải nén có chặn đường dẫn ra ngoài thư mục, rồi cài đè. Log ghi ở `%ProgramData%\VNPTNAN_GATE\logs\update.log`.
-5. Chế độ lấy theo `npm/policy.json` của bản phát hành, trừ máy được cố định bằng `--audit` hoặc `--enforce`.
+5. Mạng đi qua proxy: lúc cài, `cli.js` lấy proxy từ `HTTPS_PROXY` hoặc `npm config get https-proxy` (hoặc tham số `--proxy http://user:pass@host:port`) và lưu vào `update.json`, để lịch chạy bằng SYSTEM vẫn ra được Internet. Có tôn trọng `NO_PROXY`.
+6. Chế độ lấy theo `npm/policy.json` của bản phát hành, trừ máy được cố định bằng `--audit` hoặc `--enforce`.
 
 ## Chuẩn bị một lần
 

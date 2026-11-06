@@ -5,7 +5,8 @@
 //   npx @vnptnan/gate status          phiên bản đang cài, bản mới nhất trên kho, chế độ, lịch cập nhật
 //   npx @vnptnan/gate update [--check]    cập nhật ngay (lịch tự chạy lệnh này bằng tài khoản SYSTEM)
 //   npx @vnptnan/gate uninstall       gỡ cổng và lịch cập nhật
-// Tuỳ chọn: --registry URL, --ca FILE (CA khi dùng kho nội bộ tự ký), --token T (khi kho cần đăng nhập).
+// Tuỳ chọn: --registry URL, --ca FILE (CA khi dùng kho nội bộ tự ký), --token T (khi kho cần đăng nhập),
+// --proxy URL (mặc định lấy HTTPS_PROXY hoặc npm config https-proxy lúc cài, lưu lại cho lịch cập nhật chạy bằng SYSTEM).
 // Không phụ thuộc gói ngoài. Cổng chạy bằng bash như trước; Node chỉ dùng để tải, kiểm tra và cài.
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), zlib = require('zlib');
@@ -27,7 +28,7 @@ for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--audit' || a === '--enforce') opt.mode = a.slice(2);
   else if (a === '--check' || a === '--quiet' || a === '--elevated') opt[a.slice(2)] = true;
-  else if (['--registry', '--ca', '--token', '--stage-only'].includes(a)) opt[a.slice(2).replace('-o', 'O')] = argv[++i];
+  else if (['--registry', '--ca', '--token', '--proxy', '--stage-only'].includes(a)) opt[a.slice(2).replace('-o', 'O')] = argv[++i];
   else die(`Tham số không hiểu: ${a}`);
 }
 
@@ -46,17 +47,43 @@ function settings() {
   if (!registry || registry === 'undefined') registry = PKG.publishConfig && PKG.publishConfig.registry;
   if (!registry) die('Chưa biết địa chỉ kho gói. Chạy lại với --registry <URL Package Registry của GitLab>.');
   const ca = opt.ca || saved.ca || process.env.NODE_EXTRA_CA_CERTS || '';
-  return { name: PKG.name, registry: registry.replace(/\/?$/, '/'), ca, token: opt.token || saved.token || '', mode: opt.mode || saved.mode || '' };
+  // Proxy: tham số > đã lưu lúc cài (lịch SYSTEM không có biến môi trường của dev) > biến môi trường > cấu hình npm
+  const env = process.env;
+  const proxy = [opt.proxy, saved.proxy, env.HTTPS_PROXY, env.https_proxy, env.HTTP_PROXY, env.http_proxy, npmConfig('https-proxy'), npmConfig('proxy')]
+    .find((x) => x && !['null', 'undefined', 'false'].includes(x)) || '';
+  return { name: PKG.name, registry: registry.replace(/\/?$/, '/'), ca, token: opt.token || saved.token || '', mode: opt.mode || saved.mode || '', proxy };
 }
 
 // ------------------------------------------------------------------ HTTP (có CA nội bộ, theo redirect)
+function noProxy(host) {
+  const list = (process.env.NO_PROXY || process.env.no_proxy || '').split(',').map((x) => x.trim().replace(/^\*?\./, '')).filter(Boolean);
+  return list.some((d) => d === '*' || host === d || host.endsWith(`.${d}`));
+}
+// Đi qua proxy HTTP: đích https dùng CONNECT rồi bắt tay TLS với máy đích (chứng chỉ vẫn được kiểm như đi thẳng)
+function proxied(u, s, o) {
+  const p = new URL(/^[a-z]+:\/\//i.test(s.proxy) ? s.proxy : `http://${s.proxy}`);
+  const plib = p.protocol === 'https:' ? https : http, pport = p.port || (p.protocol === 'https:' ? 443 : 80);
+  const auth = p.username ? { 'Proxy-Authorization': `Basic ${Buffer.from(`${decodeURIComponent(p.username)}:${decodeURIComponent(p.password)}`).toString('base64')}` } : {};
+  if (u.protocol === 'http:') return [http, { ...o, host: p.hostname, port: pport, path: u.href, headers: { ...o.headers, ...auth, Host: u.host } }];
+  const target = `${u.hostname}:${u.port || 443}`;
+  return [https, { ...o, host: u.hostname, port: u.port || 443, path: u.pathname + u.search, createConnection: (_, cb) => {
+    const r = plib.request({ host: p.hostname, port: pport, method: 'CONNECT', path: target, headers: { Host: target, ...auth } });
+    r.on('connect', (res, sock) => {
+      if (res.statusCode !== 200) { sock.destroy(); return cb(new Error(`Proxy ${p.host} từ chối kết nối tới ${target} (HTTP ${res.statusCode})`)); }
+      cb(null, tls.connect({ socket: sock, servername: u.hostname, ca: o.ca }));
+    });
+    r.on('error', (e) => cb(new Error(`Không kết nối được proxy ${p.host}: ${e.message}`))); r.end();
+  } }];
+}
 function get(url, s, asJson, hops = 0) {
   return new Promise((resolve, reject) => {
     const u = new URL(url), lib = u.protocol === 'http:' ? http : https;
     const o = { headers: { 'User-Agent': `vnptnan-gate/${PKG.version}`, Accept: asJson ? 'application/json' : '*/*' }, timeout: 30000 };
     if (s.ca && fs.existsSync(s.ca)) o.ca = [...tls.rootCertificates, fs.readFileSync(s.ca, 'utf8')];
     if (s.token && u.host === new URL(s.registry).host) o.headers.Authorization = `Bearer ${s.token}`;
-    const req = lib.get(u, o, (res) => {
+    let call = (cbk) => lib.get(u, o, cbk);
+    if (s.proxy && !noProxy(u.hostname)) { const [plib, po] = proxied(u, s, o); call = (cbk) => plib.get(po, cbk); }
+    const req = call((res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && hops < 5) {
         res.resume(); return resolve(get(new URL(res.headers.location, u).href, s, asJson, hops + 1));
       }
@@ -132,6 +159,7 @@ function elevate(extra) {
 }
 function passArgs(s) {
   const a = ['--registry', s.registry];
+  if (s.proxy) a.push('--proxy', s.proxy);
   if (s.ca) a.push('--ca', path.resolve(s.ca));
   if (s.token) a.push('--token', s.token);
   if (opt.mode) a.push(`--${opt.mode}`);
@@ -149,7 +177,7 @@ function modeFor(s, dir) {
 function saveConfig(s) {
   let ca = '';
   if (s.ca) { ca = path.join(HOME, 'gitlab-ca.crt'); if (path.resolve(s.ca) !== ca) fs.copyFileSync(s.ca, ca); }
-  fs.writeFileSync(CFG, JSON.stringify({ registry: s.registry, ca, token: s.token, mode: s.mode }, null, 2));
+  fs.writeFileSync(CFG, JSON.stringify({ registry: s.registry, ca, token: s.token, mode: s.mode, proxy: s.proxy }, null, 2));
 }
 function schedule() {
   const tr = `"${process.execPath}" "${path.join(HOME, 'current', 'bin', 'cli.js')}" update --quiet`;
@@ -206,6 +234,7 @@ async function status() {
   const s = settings(), saved = readJson(CFG) || {};
   console.log(`Đang cài   : ${installedVersion() || '(chưa cài)'}${IS_WIN ? ` tại ${path.join(HOME, 'current')}` : ''}`);
   console.log(`Kho gói    : ${s.registry}${s.ca ? ` (CA: ${s.ca})` : ''}`);
+  console.log(`Proxy      : ${s.proxy ? s.proxy.replace(/\/\/[^@/]*@/, '//***@') : '(đi thẳng)'}`);
   console.log(`Chế độ     : ${saved.mode ? `${saved.mode} (cố định trên máy này)` : 'theo policy.json của gói'}`);
   try { const { ver } = await latest(s); console.log(`Bản mới nhất: ${ver}`); } catch (e) { console.log(`Bản mới nhất: không đọc được (${e.message})`); }
   if (IS_WIN) console.log(`Lịch cập nhật: ${cp.spawnSync('schtasks.exe', ['/Query', '/TN', TASK], { stdio: 'ignore' }).status === 0 ? 'có' : 'CHƯA CÓ'}`);
