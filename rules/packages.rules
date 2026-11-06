@@ -1,4 +1,4 @@
-# Rule về thành phần bên thứ ba (dependency) và giấy phép. Sửa qua merge request có ATTT và Pháp chế duyệt.
+# Rule về thành phần bên thứ ba (dependency) và giấy phép. Sửa qua merge request có ATTT và Phòng Giải pháp 2 duyệt.
 #
 # Mỗi dòng, ngăn bằng TAB: type  level  regex  message
 #   type:
@@ -7,8 +7,8 @@
 #     allow-registry  regex so với URL registry cho phép (npm registry / NuGet source); nếu có dòng này, URL khác sẽ warn
 #   level: block, warn
 #
-# Giấy phép copyleft mạnh không dùng trong sản phẩm phân phối cho khách hàng (Pháp chế rà theo P0.11 của Harness).
-deny-license	block	^(AGPL|GPL-3|GPL-2|SSPL|EUPL|CC-BY-NC|BUSL)	Giấy phép copyleft/giới hạn thương mại, cần Pháp chế duyệt trước khi dùng.
+# Giấy phép copyleft mạnh không dùng trong sản phẩm phân phối cho khách hàng (Phòng Giải pháp 2 rà theo P0.11 của Harness).
+deny-license	block	^(AGPL|GPL-3|GPL-2|SSPL|EUPL|CC-BY-NC|BUSL)	Giấy phép copyleft/giới hạn thương mại, cần ATTT và Phòng Giải pháp 2 duyệt trước khi dùng.
 deny-license	warn	^(LGPL|MPL|CDDL|EPL|OSL)	Giấy phép copyleft yếu, cần ghi nhận và tuân thủ điều kiện.
 deny-license	warn	^(UNLICENSED|UNKNOWN|SEE LICENSE|NONE)?$	Package không khai giấy phép, không được dùng khi chưa rõ.
 # Package bị gỡ/độc hại hoặc tên hay bị AI bịa (slopsquatting). Bổ sung khi ATTT có thông tin.
