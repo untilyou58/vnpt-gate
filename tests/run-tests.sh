@@ -15,6 +15,7 @@ run_case() {
     GATE_SKIP_PATHS='(^|/)node_modules/'
     tmp=$(mktemp)
     if [ "$1" = path ]; then gate_scan_file "$2" /dev/null /dev/null 0
+    elif [ "${1#file:}" != "$1" ]; then printf '%s\n' "$2" > "$tmp"; gate_scan_file "${1#file:}" "$tmp" "$tmp" ${#2}
     else printf '%s\n' "$2" > "$tmp"; gate_scan_file test.cs "$tmp" "$tmp" ${#2}; fi
     rm -f "$tmp"
   ) 2>&1 | sed -nE 's/^\[VNPTNAN_GATE\] (CHAN|CANH-BAO) ([a-z0-9-]+) .*/\2 \1/p'
@@ -26,6 +27,7 @@ while IFS=$'\t' read -r kind input want level; do
   n=$((n + 1))
   got=$(run_case "$kind" "$input")
   wantlvl=$([ "$level" = block ] && echo CHAN || echo CANH-BAO)
+  [ "$want" = "-" ] || [ -n "$got" ] || [ "${GATE_ENGINE:-}" = bash ] || true
   if [ "$want" = "-" ]; then
     if [ -z "$got" ]; then ok; else fail "[$kind] '$input' phải không khớp, lại ra: $(echo "$got" | tr '\n' ' ')"; fi
   else

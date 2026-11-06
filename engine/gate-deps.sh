@@ -55,6 +55,20 @@ deps_npm() {
     # Lấy tên các dependency trực tiếp (dependencies + devDependencies): dòng dạng "ten": "ver" nằm giữa hai khối.
     # Chuẩn hoá JSON về mỗi phần tử một dòng (package.json có thể nằm trên một dòng) rồi lấy khối dependencies.
     block=$(tr -d '\n\r' < "$pj" | sed 's/[{},]/&\n/g' | awk '/"(dependencies|devDependencies|optionalDependencies)"[[:space:]]*:/{f=1;next} f&&/^[[:space:]]*}/{f=0} f')
+    # Không có node_modules nào (từ thư mục của package.json lên tới gốc): chưa npm install -> một cảnh báo cho cả file
+    nm=$(dirname "$pj"); while [ ! -d "$nm/node_modules" ] && [ "$nm" != "$dir" ] && [ "$nm" != "${nm%/*}" ]; do nm=${nm%/*}; done
+    if [ ! -d "$nm/node_modules" ]; then
+      local cnt
+      cnt=$(printf '%s\n' "$block" | grep -c '^[[:space:]]*"[^"]*"[[:space:]]*:' || true)
+      if [ "${cnt:-0}" -gt 0 ]; then
+        while IFS= read -r line; do
+          name=$(printf '%s' "$line" | sed -n 's/^[[:space:]]*"\([^"]*\)".*/\1/p'); [ -n "$name" ] || continue
+          deps_check_one npm "$name" "?" "" "${pj#"$dir"/}" nolic
+        done <<< "$block"
+        gate_report_finding "$(deps_level warn)" "g-dep-unresolved" "${pj#"$dir"/}" "" "chưa npm install: $cnt package chưa kiểm được tên và giấy phép" "Chạy npm install (hoặc npm ci) trên máy này rồi quét lại (cổng đọc giấy phép từ node_modules; AI hay bịa tên package)."
+      fi
+      continue
+    fi
     while IFS= read -r line; do
       name=$(printf '%s' "$line" | sed -n 's/^[[:space:]]*"\([^"]*\)".*/\1/p')
       [ -n "$name" ] || continue
@@ -134,23 +148,35 @@ deps_nuget() {
     [ -n "$proj" ] || continue
     pdir=$(dirname "$proj")
     mapfile -t DEPS_DIRS < <(deps_nuget_dirs "$pdir" | sed 's#/*$##' | awk 'NF && !seen[$0]++')
+    local -a pk_name=() pk_ver=() pk_spec=()
     while IFS='|' read -r name ver; do
       [ -n "$name" ] || continue
       lower=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
       ver=${ver#[}; ver=${ver%]}           # [1.2.3] -> 1.2.3
       nuspec=""
       for d in "${DEPS_DIRS[@]}"; do
-        d=${d%/}
         [ -f "$d/$lower/$ver/$lower.nuspec" ] && { nuspec="$d/$lower/$ver/$lower.nuspec"; break; }
       done
-      if [ -n "$nuspec" ]; then
-        lic=$(deps_nuget_license "$nuspec")
-        deps_check_one nuget "$name" "$ver" "$lic" "${proj#"$dir"/}"
-      else
-        deps_check_one nuget "$name" "$ver" "" "${proj#"$dir"/}" nolic
-        gate_report_finding "$(deps_level warn)" "g-dep-unresolved" "${proj#"$dir"/}" "" "nuget $name@$ver không thấy trong cache NuGet (${DEPS_DIRS[*]:0:2})" "Package chưa được restore: kiểm tra tên có thật trên nuget.org (AI hay bịa tên package) rồi dotnet restore trước khi push."
-      fi
+      pk_name+=("$name"); pk_ver+=("$ver"); pk_spec+=("$nuspec")
     done < <(tr -d '\r' < "$proj" | sed -n 's/.*<PackageReference[^>]*Include="\([^"]*\)"[^>]*Version="\([^"]*\)".*/\1|\2/p')
+    local found=0 k
+    for k in "${!pk_spec[@]}"; do [ -n "${pk_spec[$k]}" ] && found=$((found + 1)); done
+    if [ "${#pk_name[@]}" -gt 0 ] && [ "$found" -eq 0 ] && [ ! -f "$pdir/obj/project.assets.json" ]; then
+      # Cả project chưa restore trên máy này (vd. build trong Docker/CI): một cảnh báo cho cả project, không báo từng package
+      for k in "${!pk_name[@]}"; do deps_check_one nuget "${pk_name[$k]}" "${pk_ver[$k]}" "" "${proj#"$dir"/}" nolic; done
+      gate_report_finding "$(deps_level warn)" "g-dep-unresolved" "${proj#"$dir"/}" "" "project chưa restore: ${#pk_name[@]} package chưa kiểm được tên và giấy phép" "Chạy dotnet restore trên máy này rồi quét lại (cổng đọc giấy phép từ cache NuGet; AI hay bịa tên package)."
+    else
+      for k in "${!pk_name[@]}"; do
+        name=${pk_name[$k]}; ver=${pk_ver[$k]}; nuspec=${pk_spec[$k]}
+        if [ -n "$nuspec" ]; then
+          deps_check_one nuget "$name" "$ver" "$(deps_nuget_license "$nuspec")" "${proj#"$dir"/}"
+        else
+          # Project đã restore mà package này không có trong cache: dấu hiệu tên sai/bịa hoặc chưa restore lại sau khi thêm
+          deps_check_one nuget "$name" "$ver" "" "${proj#"$dir"/}" nolic
+          gate_report_finding "$(deps_level warn)" "g-dep-unresolved" "${proj#"$dir"/}" "" "nuget $name@$ver không thấy trong cache NuGet (${DEPS_DIRS[*]})" "Package chưa được restore: kiểm tra tên có thật trên nuget.org (AI hay bịa tên package) rồi dotnet restore trước khi push."
+        fi
+      done
+    fi
     if [ "$GATE_DEPS_AUDIT" = 1 ] && command -v dotnet >/dev/null 2>&1; then
       if dotnet list "$proj" package --vulnerable --include-transitive 2>/dev/null | grep -qiE 'high|critical'; then
         gate_report_finding "$(deps_level block)" "g-dep-vulnerable" "${proj#"$dir"/}" "" "dotnet list package --vulnerable" "Có lỗ hổng mức high/critical trong package NuGet."

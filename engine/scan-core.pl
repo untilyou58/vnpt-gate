@@ -35,7 +35,7 @@ my $MAX = $o{max} || 5242880;
 my $SKIP = (defined $o{skip} && length $o{skip}) ? qr/$o{skip}/i : undef;
 
 # ---------------------------------------------------------------- rule của Gate
-my (@line, @path, @count, @size, @allowre, @exempt);
+my (@line, @path, @count, @size, @allowre, @exempt, @skip);
 if ($o{rules} && -f $o{rules}) {
   open my $f, '<:raw', $o{rules} or die "Không mở được $o{rules}: $!\n";
   while (my $l = <$f>) {
@@ -44,7 +44,7 @@ if ($o{rules} && -f $o{rules}) {
     my ($id, $level, $kind, $re, $msg) = split /\t/, $l, 5;
     next unless defined $re;
     my $r = { id => $id, level => $level, msg => $msg // '' };
-    if ($kind eq 'count' || $kind eq 'size') {
+    if ($kind eq 'count' || $kind eq 'size' || $kind eq 'skip') {
       my ($n, $rx) = split /\|/, $re, 2;
       @$r{qw(n q raw)} = ($n, qr/$rx/i, $rx);
     } else {
@@ -56,6 +56,7 @@ if ($o{rules} && -f $o{rules}) {
     elsif ($kind eq 'size')   { push @size, $r }
     elsif ($kind eq 'allow')  { push @allowre, $r->{q} }
     elsif ($kind eq 'exempt') { push @exempt, $r->{q} }
+    elsif ($kind eq 'skip')   { push @skip, { ids => qr/$r->{n}/i, path => $r->{q} } }
   }
   close $f;
 }
@@ -125,7 +126,14 @@ sub gl_allowed {
   return @c && !grep { !$_ } @c;
 }
 
-sub out { print join("\t", @_), "\n" }
+our ($PROG_W, $PROG_NEXT) = (0, 0);   # độ rộng dòng tiến độ đang hiện; thời điểm được vẽ lại
+sub out {
+  if ($PROG_W) {   # xoá dòng tiến độ trước khi bash in phát hiện; chờ ít nhất 1 giây mới vẽ lại
+    print STDERR "\r", ' ' x $PROG_W, "\r";
+    $PROG_W = 0; $PROG_NEXT = time + 2;
+  }
+  print join("\t", @_), "\n";
+}
 
 sub line_allowed {
   my ($text, $id) = @_;
@@ -172,12 +180,14 @@ sub scan_file {
   # Rule theo dòng: rule Gate trước, rồi rule Gitleaks cho dòng chưa bị rule secret của Gate bắt
   my $glskip = $glg && grep { $p =~ $_ } @{ $glg->{qpath} };
   my @glc = $glskip ? () : grep { $_->{q} } @glp;
+  my @lr = @line;
+  for my $k (@skip) { @lr = grep { $_->{id} !~ $k->{ids} } @lr if $p =~ $k->{path} }   # rule kind=skip
   my (%cap, $ln);
   while (my $l = <$lf>) {
     $ln++;
     $l =~ s/\r?\n$//;
     my $secret_hit = 0;
-    for my $r (@line) {
+    for my $r (@lr) {
       next if ($cap{ $r->{id} } // 0) >= 20;
       next unless $l =~ $r->{q};
       my $m = $&;
@@ -216,28 +226,29 @@ sub scan_file {
 if (@one) { scan_file(@one[0, 1, 2, 3]) }
 elsif ($o{list}) {
   my $total = $o{progress} || 0;
-  my ($done, $last, $width) = (0, 0, 0);
+  my $done = 0;
   my $t0 = time;
+  $| = 1 if $total;   # phát hiện tới bash ngay, không bị dồn sau dòng tiến độ
   my $show = sub {   # một dòng tiến độ, ghi đè bằng \r, tối đa 1 lần/giây
     my ($path) = @_;
     my $pct = $total ? int(100 * $done / $total) : 0;
     my $p = $path // ''; utf8::decode($p);              # cắt theo ký tự, không cắt giữa chữ có dấu
     $p =~ s/^.*(.{40})$/...$1/s;
     my $msg = sprintf "[VNPTNAN_GATE] \x{110}ang qu\x{e9}t %d/%d file (%d%%) %s", $done, $total, $pct, $p;
-    my $pad = $width > length($msg) ? ' ' x ($width - length($msg)) : '';
-    $width = length $msg;
+    my $pad = $PROG_W > length($msg) ? ' ' x ($PROG_W - length($msg)) : '';
+    $PROG_W = length $msg;
     my $b = "\r$msg$pad"; utf8::encode($b); print STDERR $b;
   };
   while (my $rec = <STDIN>) {
     $rec =~ s/\r?\n$//;
     my ($size, $lines, $full, $path) = split /\t/, $rec, 4;
     next unless defined $path;
-    if ($total && time != $last) { $last = time; $show->($path) }
+    if ($total && time >= $PROG_NEXT) { $PROG_NEXT = time + 1; $show->($path) }
     scan_file($path, $lines, $full, $size);
     $done++;
   }
   if ($total) {
-    print STDERR "\r", ' ' x $width, "\r";
+    print STDERR "\r", ' ' x $PROG_W, "\r" if $PROG_W;
     my $b = sprintf "[VNPTNAN_GATE] \x{110}\x{e3} qu\x{e9}t %d file trong %d gi\x{e2}y; b\x{1ecf} qua %d file theo SKIP_PATHS.\n",
       $done - ($o{nskip} || 0), time - $t0, $o{nskip} || 0;
     utf8::encode($b); print STDERR $b;

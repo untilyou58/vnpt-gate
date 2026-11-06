@@ -100,7 +100,7 @@ gate_load_rules() {
       gate_say "Dòng rule hỏng (cần 5 cột ngăn bằng TAB): $line"; return 2
     fi
     case "$level" in block|warn) ;; *) gate_say "Mức không hợp lệ '$level' ở rule $id"; return 2 ;; esac
-    case "$kind" in line|path|count|size|allow|exempt) ;; *) gate_say "Loại không hợp lệ '$kind' ở rule $id"; return 2 ;; esac
+    case "$kind" in line|path|count|size|allow|exempt|skip) ;; *) gate_say "Loại không hợp lệ '$kind' ở rule $id"; return 2 ;; esac
     RULE_ID+=("$id"); RULE_LEVEL+=("$level"); RULE_KIND+=("$kind"); RULE_RE+=("$re"); RULE_MSG+=("${msg:-}")
   done < "$file"
 }
@@ -285,9 +285,16 @@ gate_scan_file_bash() {
   done
 
   # Rule theo dòng (trên các dòng được thêm)
+  local skipids="" j
+  for j in "${!RULE_ID[@]}"; do   # rule kind=skip: "id-regex|path-regex"
+    [ "${RULE_KIND[$j]}" = skip ] || continue
+    printf '%s' "$path" | grep -qiE -- "${RULE_RE[$j]#*|}" && skipids="$skipids|${RULE_RE[$j]%%|*}"
+  done
+  skipids=${skipids#|}
   for i in "${!RULE_ID[@]}"; do
     [ "${RULE_KIND[$i]}" = line ] || continue
     id=${RULE_ID[$i]}; level=${RULE_LEVEL[$i]}; re=${RULE_RE[$i]}; msg=${RULE_MSG[$i]}
+    if [ -n "$skipids" ] && printf '%s' "$id" | grep -qiE -- "$skipids"; then continue; fi
     while IFS= read -r hit; do
       [ -n "$hit" ] || continue
       ln=${hit%%:*}; text=${hit#*:}

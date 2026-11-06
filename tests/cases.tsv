@@ -1,5 +1,5 @@
 # Ca kiểm thử rule. Cột ngăn bằng TAB: loại  đầu-vào  rule-mong-đợi  mức-mong-đợi
-#   loại: line (một dòng nội dung, tên file test.cs) | path (đường dẫn file)
+#   loại: line (một dòng nội dung, tên file test.cs) | path (đường dẫn file) | file:<đường-dẫn> (một dòng, quét như nằm trong file đó)
 #   rule-mong-đợi: id rule phải khớp, hoặc "-" nghĩa là không rule nào được khớp (chống chặn nhầm)
 # --- secret: phải chặn ---
 line	-----BEGIN RSA PRIVATE KEY-----	g-secret-private-key	block
@@ -69,3 +69,22 @@ line	sqlplus scott/Tiger2026@ORCL	g-secret-oracle-ezconnect	block
 line	conn = "app_user/App2026xx@db01.corp.local/APPDB"	g-secret-oracle-ezconnect	block
 line	      - uses: actions/setup-node@v4	-	-
 line	      - uses: actions/upload-artifact@v4.1.0	-	-
+# --- báo sai gặp khi quét repo thật (06/11/2026): không được khớp ---
+file:fe-base/src/i18n/locales/vi/auth.json	  "newPassword": "Mật khẩu mới",	-	-
+file:fe-base/src/i18n/locales/en/auth.json	  "password": "Password",	-	-
+file:fe-base/src/i18n/locales/vi/common.json	  "auto_mat_khau": "Matkhau",	-	-
+line	  "forgotPassword": "Quên mật khẩu?",	-	-
+file:be-base/tests/Halocom.Api.Tests/AdminPasswordChangeTests.cs	    private const string InitialPassword = "Init@Pass2026!";	-	-
+file:be-base/Halocom.Api.Tests/UserUnitTests.cs	    const string password = "Test@12345";	-	-
+file:fe-base/tests/create-location.spec.ts	  await page.fill('#password', 'Admin@123456');	-	-
+file:deploy/db-init/01-app-role.sh	psql -v app_password="$APP_DB_PASSWORD" <<'SQL'	-	-
+line	    "Password": "${SMTP_PASSWORD}",	-	-
+file:be-base/Halocom.WebAPI/Program.cs	    : ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]	-	-
+# --- vẫn phải bắt ---
+file:be-base/Halocom.WebAPI/Config/mail.json	    "Password": "Smtp#Real2026",	g-secret-password	block
+file:be-base/Halocom.WebAPI/Config/identity.json	    "DefaultPassword": "Halocom@2026",	g-secret-password	block
+file:be-base/tests/Halocom.Api.Tests/DbFixture.cs	    "Host=db01;Username=app;Password=Th4tIsReal99;"	g-secret-connstring	block
+file:be-base/tests/Halocom.Api.Tests/GhTests.cs	    var t = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";	g-secret-github	block
+file:be-base/Halocom.WebAPI/Config/appsettings.json	    "GeminiBaseUrl": "http://10.42.0.5:8064",	g-internal-ip	warn
+file:src/Services/latest.cs	    password = "Vnpt@NgheAn2026";	g-secret-password	block
+file:src/app/login.test.ts	  const password = "Test@12345";	-	-
