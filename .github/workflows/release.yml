@@ -1,4 +1,4 @@
-# Phát hành: đẩy tag vX.Y.Z (trùng file VERSION) -> chạy toàn bộ ci.yml (cả Windows) -> npm publish có provenance
+# Phát hành: đẩy tag vX.Y.Z (số phiên bản lấy từ tag, không cần sửa file VERSION trước) -> chạy toàn bộ ci.yml (cả Windows) -> npm publish có provenance
 # -> GitHub Release kèm file cài một-file và zip cho máy chủ GitLab.
 #
 # Xác thực với npm, chọn một:
@@ -26,10 +26,13 @@ jobs:
       id-token: write           # Trusted Publishing + provenance
     steps:
       - uses: actions/checkout@v4
-      - name: Tag phải trùng VERSION
+      - name: Số phiên bản lấy từ tag (vX.Y.Z)
         run: |
-          v=$(tr -d '\r\n' < VERSION)
-          [ "${GITHUB_REF_NAME}" = "v$v" ] || { echo "Tag ${GITHUB_REF_NAME} khác VERSION $v"; exit 1; }
+          v=${GITHUB_REF_NAME#v}
+          echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "Tag ${GITHUB_REF_NAME} không đúng dạng vX.Y.Z"; exit 1; }
+          cur=$(tr -d '\r\n' < VERSION)
+          [ "$cur" = "$v" ] || echo "::notice::VERSION trong repo là $cur, đóng gói theo tag: $v"
+          printf '%s\n' "$v" > VERSION
       - uses: actions/setup-node@v4
         with:
           node-version: 24
