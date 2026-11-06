@@ -86,19 +86,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: npx setup / status / uninstall (đúng như dev chạy, gói nằm trong cache npx\node_modules)
+      - name: npx setup / status / uninstall (đúng như dev gõ, gói nằm trong cache npx\node_modules)
         shell: pwsh
         run: |
+          # Gõ từng lệnh npx đầy đủ: npx.ps1 trên Windows đọc lại nguyên dòng lệnh ($MyInvocation.Line),
+          # gọi qua biến scriptblock với @args sẽ làm mất tham số.
           $tgz = (Get-Item dist\vnptnan-gate-*.tgz).FullName
-          $npx = { npx -y --package=$tgz vnptnan-gate-setup @args }
-          & $npx setup --enforce
+          npx -y --package=$tgz vnptnan-gate-setup setup --enforce
           if ($LASTEXITCODE -ne 0) { throw 'npx setup lỗi' }
           if (-not (Test-Path "$env:ProgramData\VNPTNAN_GATE\current\cli\vnptnan-gate.cmd")) { throw 'npx setup không cài được file' }
+          $mode = (Get-Content "$env:ProgramData\VNPTNAN_GATE\current\gate.conf" | Select-String '^MODE=(\w+)').Matches[0].Groups[1].Value
+          if ($mode -ne 'enforce') { throw "tham số --enforce không tới được gói (MODE=$mode)" }
           schtasks /Query /TN 'VNPTNAN_GATE Update' | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'không có lịch tự cập nhật' }
-          Get-Content "$env:ProgramData\VNPTNAN_GATE\current\gate.conf" | Select-String '^MODE='
-          & $npx status
-          & $npx uninstall
+          $st = npx -y --package=$tgz vnptnan-gate-setup status | Out-String
+          Write-Host $st
+          if ($st -notmatch 'Lịch cập nhật') { throw 'lệnh status không chạy (tham số bị mất)' }
+          npx -y --package=$tgz vnptnan-gate-setup uninstall
           if (Test-Path "$env:ProgramData\VNPTNAN_GATE\current") { throw 'gỡ chưa sạch' }
           schtasks /Query /TN 'VNPTNAN_GATE Update' 2>$null | Out-Null
           if ($LASTEXITCODE -eq 0) { throw 'lịch cập nhật còn sau khi gỡ' }
