@@ -9,7 +9,8 @@
 #     size    regex field là "BYTES|regex": file khớp regex và lớn hơn BYTES thì vi phạm
 #     allow   regex so với dòng nội dung; dòng khớp được bỏ qua mọi rule kind=line (giá trị mẫu, placeholder)
 #     exempt  regex so với đường dẫn; file khớp được bỏ qua mọi rule kind=path
-#     skip    regex field là "id-regex|path-regex": file khớp path-regex được bỏ qua các rule kind=line có id khớp id-regex
+#     skip    regex field là "id,id,...|path-regex": file khớp path-regex được bỏ qua các rule kind=line có id trong danh sách
+#             (id có thể kết thúc bằng * để khớp tiền tố, vd. g-sast-*)
 #             (dùng cho rule dễ báo sai ở loại file đã biết; rule secret có định dạng riêng như ghp_, AKIA vẫn quét)
 # Regex: không phân biệt hoa thường, cú pháp POSIX ERE (grep -E). Không dùng \d \w \s \b.
 # Mọi id bắt đầu bằng "g-" để không trùng id của VNPTNAN_HARNESS (company.rules).
@@ -30,7 +31,7 @@ g-secret-slack	block	line	xox[baprs]-[0-9A-Za-z-]{10,}	Slack token.
 g-secret-telegram	block	line	[0-9]{8,10}:AA[0-9A-Za-z_-]{33}	Telegram bot token.
 g-secret-jwt	block	line	eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}	JSON Web Token thật.
 g-secret-url-cred	block	line	[a-z][a-z0-9+.-]*://[^/:@ "']+:[^@/ "']{3,}@[a-z0-9.-]	Mật khẩu nhúng trong URL (user:pass@host).
-g-secret-connstring	block	line	(data source|server|host|user id|uid)[ ]*=[^;]*;[^#]*(password|pwd)[ ]*=[ ]*[^;"' ]{4,}	Chuỗi kết nối database có mật khẩu.
+g-secret-connstring	block	line	(data source|server|host|user id|uid)[ ]*=[^;]{0,256};[^#]{0,512}(password|pwd)[ ]*=[ ]*[^;"' ]{4,}	Chuỗi kết nối database có mật khẩu.
 g-secret-oracle-ezconnect	block	line	(^|[^a-z0-9_/])[a-z][a-z0-9_$]*/[^@/ \"']{4,}@(([a-z0-9-]+\.)+[a-z]{2,}|[0-9]{1,3}(\.[0-9]{1,3}){3}|[a-z0-9_.-]+:[0-9]{2,5})(:[0-9]+)?(/[a-z0-9_.]+)?([^a-z0-9_.]|$)|(sqlplus|sqlldr|rman|expdp|impdp)[^\"']* [a-z][a-z0-9_$]*/[^@/ \"']{4,}@[a-z0-9_]+	Chuỗi user/mật_khẩu@host/service của Oracle.
 g-secret-generic-key	block	line	(api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key|refresh[_-]?token)["']?[ ]*[:=][ ]*["'][A-Za-z0-9/+_=.-]{16,}["']	Khoá/token gán cứng trong mã.
 g-secret-password	block	line	(password|passwd|pwd|mat[_-]?khau|matkhau)["']?[ ]*[:=][ ]*["'][^"' $%{<:][^"' ]{5,}["']	Mật khẩu gán cứng trong mã.
@@ -75,8 +76,9 @@ g-sast-destructive-code	warn	line	(EnsureDeleted(Async)?\(|Execute(Sql|SqlRaw|Sq
 # ===== 7. Giá trị mẫu được bỏ qua (allow) =====
 g-allow-placeholder	warn	allow	(changeme|change_me|your[_-]?(api[_-]?key|token|password|secret)|<[a-z_ -]+>|\$\{[a-z_.:-]+\}|\{\{[a-z_. -]+\}\}|%[A-Z_]+%|xxxx|\*\*\*\*|placeholder|example\.com|dummy|khong-phai-that|(^|["'=: ])(password123|123456|secret123|p@ssw0rd|admin123)(["' ]|$))	Giá trị mẫu, không phải secret thật.
 g-allow-private-cidr	warn	allow	(^|[^0-9.])(10\.0\.0\.0/8|172\.16\.0\.0/12|192\.168\.0\.0/16|127\.0\.0\.0/8)([^0-9]|$)	Danh sách dải mạng nội bộ chuẩn (RFC 1918), không lộ hạ tầng.
-# Rule g-secret-password là heuristic: không áp cho file dịch giao diện (nhãn "Mật khẩu") và mã kiểm thử (mật khẩu giả cho test).
+g-allow-psql-var	warn	allow	password[ ]+:["'][a-z_][a-z0-9_]*["']	Biến psql (ALTER ROLE ... PASSWORD :'ten_bien'), giá trị lấy lúc chạy.
+# Rule heuristic (g-secret-password, g-secret-generic-key, g-sast-*): không áp cho file dịch giao diện và mã kiểm thử.
 # Secret có định dạng riêng (Gitleaks, g-secret-aws, ghp_...) và chuỗi kết nối vẫn được quét ở các file này.
-g-skip-i18n	warn	skip	^g-secret-password$|(^|/)(i18n|locales?|lang|langs|translations?)/[^ ]*\.(json|ya?ml|po|resx|properties|arb)$|\.resx$	File dịch giao diện: chữ "password" là nhãn, không phải mật khẩu.
-g-skip-tests	warn	skip	^g-secret-password$|(^|/)(tests?|__tests__|specs?)/|[^/]\.Tests?/|[._-](tests?|spec)\.[a-z]+$	Mã kiểm thử: mật khẩu giả cho tài khoản test.
+g-skip-i18n	warn	skip	g-secret-password|(^|/)(i18n|locales?|lang|langs|translations?)/[^ ]*\.(json|ya?ml|po|resx|properties|arb)$|\.resx$	File dịch giao diện: chữ "password" là nhãn, không phải mật khẩu.
+g-skip-tests	warn	skip	g-secret-password,g-secret-generic-key,g-sast-*|(^|/)(tests?|__tests__|specs?)/|[^/]\.Tests?/|[._-](tests?|spec)\.[a-z]+$	Mã kiểm thử: mật khẩu/token giả cho test; mẫu SAST trong test không chạy ở production.
 # Ngoại lệ tại chỗ: thêm "gate-allow:<id-rule> <lý do>" vào chính dòng đó (engine xử lý, chỉ bỏ qua đúng rule đó, vẫn ghi log).

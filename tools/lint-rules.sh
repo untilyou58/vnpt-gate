@@ -19,7 +19,10 @@ while IFS= read -r line || [ -n "$line" ]; do
   case "$kind" in
     line|path|allow|exempt) check_regex "$re" || { echo "gate.rules: regex không hợp lệ ở $id"; err=1; } ;;
     count|size) case "$re" in [0-9]*'|'*) check_regex "${re#*|}" || { echo "gate.rules: regex không hợp lệ ở $id"; err=1; } ;; *) echo "gate.rules: $kind cần dạng N|regex ở $id"; err=1 ;; esac ;;
-    skip) case "$re" in *'|'*) { check_regex "${re%%|*}" && check_regex "${re#*|}"; } || { echo "gate.rules: regex không hợp lệ ở $id"; err=1; } ;; *) echo "gate.rules: skip cần dạng id-regex|path-regex ở $id"; err=1 ;; esac ;;
+    skip) case "$re" in *'|'*)
+            printf '%s' "${re%%|*}" | grep -qE '^g-[a-z0-9*-]+(,g-[a-z0-9*-]+)*$' || { echo "gate.rules: skip cần danh sách id g-... ngăn bằng dấu phẩy ở $id"; err=1; }
+            check_regex "${re#*|}" || { echo "gate.rules: regex không hợp lệ ở $id"; err=1; } ;;
+          *) echo "gate.rules: skip cần dạng id,id|path-regex ở $id"; err=1 ;; esac ;;
     *) echo "gate.rules: loại sai ở $id: $kind"; err=1 ;;
   esac
   printf '%s' "$re" | grep -qE '\\[dwsb]|\(\?' && { echo "gate.rules: $id dùng \\d \\w \\s \\b hoặc (?...) không có trong POSIX ERE"; err=1; }

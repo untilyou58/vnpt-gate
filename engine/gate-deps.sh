@@ -54,7 +54,12 @@ deps_npm() {
     nm=$(dirname "$pj")/node_modules
     # Lấy tên các dependency trực tiếp (dependencies + devDependencies): dòng dạng "ten": "ver" nằm giữa hai khối.
     # Chuẩn hoá JSON về mỗi phần tử một dòng (package.json có thể nằm trên một dòng) rồi lấy khối dependencies.
-    block=$(tr -d '\n\r' < "$pj" | sed 's/[{},]/&\n/g' | awk '/"(dependencies|devDependencies|optionalDependencies)"[[:space:]]*:/{f=1;next} f&&/^[[:space:]]*}/{f=0} f')
+    if command -v node >/dev/null 2>&1; then
+      # Có node: đọc JSON chuẩn (khối lồng nhau như overrides, ký tự đặc biệt không làm sai)
+      block=$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const k of ["dependencies","devDependencies","optionalDependencies"])for(const [n,v] of Object.entries(p[k]||{}))console.log(JSON.stringify(n)+": "+JSON.stringify(String(v)))' "$pj" 2>/dev/null)
+    else
+      block=$(tr -d '\n\r' < "$pj" | sed 's/[{},]/&\n/g' | awk '/"(dependencies|devDependencies|optionalDependencies)"[[:space:]]*:/{f=1;next} f{print; if (/[}]/) f=0}')
+    fi
     # Không có node_modules nào (từ thư mục của package.json lên tới gốc): chưa npm install -> một cảnh báo cho cả file
     nm=$(dirname "$pj"); while [ ! -d "$nm/node_modules" ] && [ "$nm" != "$dir" ] && [ "$nm" != "${nm%/*}" ]; do nm=${nm%/*}; done
     if [ ! -d "$nm/node_modules" ]; then
@@ -159,23 +164,36 @@ deps_nuget() {
       done
       pk_name+=("$name"); pk_ver+=("$ver"); pk_spec+=("$nuspec")
     done < <(tr -d '\r' < "$proj" | sed -n 's/.*<PackageReference[^>]*Include="\([^"]*\)"[^>]*Version="\([^"]*\)".*/\1|\2/p')
-    local found=0 k
+    local found=0 k assets="$pdir/obj/project.assets.json" libs="" elsewhere=0 elsewhere_dir=""
     for k in "${!pk_spec[@]}"; do [ -n "${pk_spec[$k]}" ] && found=$((found + 1)); done
-    if [ "${#pk_name[@]}" -gt 0 ] && [ "$found" -eq 0 ] && [ ! -f "$pdir/obj/project.assets.json" ]; then
+    # project.assets.json liệt kê package NuGet đã giải được ("Ten/phien-ban"): có tên ở đây là package có thật
+    if [ -f "$assets" ]; then
+      libs=$(tr -d '\r' < "$assets" | sed -n '/"libraries"[[:space:]]*:/,/"projectFileDependencyGroups"/p' | sed -n 's/^[[:space:]]*"\([^"/]*\)\/[^"]*"[[:space:]]*:[[:space:]]*{.*/\1/p' | tr '[:upper:]' '[:lower:]')
+      elsewhere_dir=$(tr -d '\r' < "$assets" | sed -n '/"packageFolders"/,/^[[:space:]]*},*[[:space:]]*$/p' | sed -n 's/^[[:space:]]*"\([^"]*\)"[[:space:]]*:.*/\1/p' | grep -v packageFolders | head -n1 | sed 's/\\\\/\\/g')
+    fi
+    if [ "${#pk_name[@]}" -gt 0 ] && [ "$found" -eq 0 ] && [ ! -f "$assets" ]; then
       # Cả project chưa restore trên máy này (vd. build trong Docker/CI): một cảnh báo cho cả project, không báo từng package
       for k in "${!pk_name[@]}"; do deps_check_one nuget "${pk_name[$k]}" "${pk_ver[$k]}" "" "${proj#"$dir"/}" nolic; done
       gate_report_finding "$(deps_level warn)" "g-dep-unresolved" "${proj#"$dir"/}" "" "project chưa restore: ${#pk_name[@]} package chưa kiểm được tên và giấy phép" "Chạy dotnet restore trên máy này rồi quét lại (cổng đọc giấy phép từ cache NuGet; AI hay bịa tên package)."
     else
       for k in "${!pk_name[@]}"; do
         name=${pk_name[$k]}; ver=${pk_ver[$k]}; nuspec=${pk_spec[$k]}
+        lower=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
         if [ -n "$nuspec" ]; then
           deps_check_one nuget "$name" "$ver" "$(deps_nuget_license "$nuspec")" "${proj#"$dir"/}"
-        else
-          # Project đã restore mà package này không có trong cache: dấu hiệu tên sai/bịa hoặc chưa restore lại sau khi thêm
+        elif [ -n "$libs" ] && printf '%s\n' "$libs" | grep -qxF -- "$lower"; then
+          # NuGet đã giải được (tên có thật) nhưng cache nằm ở môi trường khác (WSL, container): chỉ thiếu giấy phép
           deps_check_one nuget "$name" "$ver" "" "${proj#"$dir"/}" nolic
-          gate_report_finding "$(deps_level warn)" "g-dep-unresolved" "${proj#"$dir"/}" "" "nuget $name@$ver không thấy trong cache NuGet (${DEPS_DIRS[*]})" "Package chưa được restore: kiểm tra tên có thật trên nuget.org (AI hay bịa tên package) rồi dotnet restore trước khi push."
+          elsewhere=$((elsewhere + 1))
+        else
+          # Project đã restore mà package này không có: dấu hiệu tên sai/bịa hoặc chưa restore lại sau khi thêm
+          deps_check_one nuget "$name" "$ver" "" "${proj#"$dir"/}" nolic
+          gate_report_finding "$(deps_level warn)" "g-dep-unresolved" "${proj#"$dir"/}" "" "nuget $name@$ver không có trong obj/project.assets.json lẫn cache NuGet (${DEPS_DIRS[*]})" "Package chưa được restore: kiểm tra tên có thật trên nuget.org (AI hay bịa tên package) rồi dotnet restore trước khi push."
         fi
       done
+      if [ "$elsewhere" -gt 0 ]; then
+        gate_report_finding "$(deps_level warn)" "g-dep-unresolved" "${proj#"$dir"/}" "" "$elsewhere package đã restore ở môi trường khác (${elsewhere_dir:-?}): tên hợp lệ, chưa đọc được giấy phép" "Cache NuGet không đọc được từ máy này (thường do restore trong WSL/container). Chạy dotnet restore trên chính máy này để cổng kiểm giấy phép."
+      fi
     fi
     if [ "$GATE_DEPS_AUDIT" = 1 ] && command -v dotnet >/dev/null 2>&1; then
       if dotnet list "$proj" package --vulnerable --include-transitive 2>/dev/null | grep -qiE 'high|critical'; then

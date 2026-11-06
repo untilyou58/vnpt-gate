@@ -88,3 +88,7 @@ file:be-base/tests/Halocom.Api.Tests/GhTests.cs	    var t = "ghp_abcdefghijklmno
 file:be-base/Halocom.WebAPI/Config/appsettings.json	    "GeminiBaseUrl": "http://10.42.0.5:8064",	g-internal-ip	warn
 file:src/Services/latest.cs	    password = "Vnpt@NgheAn2026";	g-secret-password	block
 file:src/app/login.test.ts	  const password = "Test@12345";	-	-
+file:deploy/db-init/01-app-role.sh	ALTER ROLE halocom_app WITH PASSWORD :'app_password';	-	-
+file:be-base/tests/Halocom.Api.Tests/SecurityReview20261024Tests.cs	    user!.RefreshToken = "abcdefghijklmnop1234567890";	-	-
+file:be-base/tests/Halocom.Api.Tests/WorkerQueueTests.cs	    await using (var listen = new NpgsqlCommand($"LISTEN {WorkSignal.Channel}", conn))	-	-
+file:src/Services/TokenService.cs	    var refresh_token = "abcdefghijklmnop1234567890";	g-secret-generic-key	block

@@ -56,7 +56,10 @@ if ($o{rules} && -f $o{rules}) {
     elsif ($kind eq 'size')   { push @size, $r }
     elsif ($kind eq 'allow')  { push @allowre, $r->{q} }
     elsif ($kind eq 'exempt') { push @exempt, $r->{q} }
-    elsif ($kind eq 'skip')   { push @skip, { ids => qr/$r->{n}/i, path => $r->{q} } }
+    elsif ($kind eq 'skip')   {   # "id,id,g-sast-*|path-regex"
+      my $ids = join '|', map { my $x = quotemeta; $x =~ s/\\\*$/.*/; $x } split /,/, $r->{n};
+      push @skip, { ids => qr/^(?:$ids)$/i, path => $r->{q} };
+    }
   }
   close $f;
 }
@@ -244,8 +247,14 @@ elsif ($o{list}) {
     my ($size, $lines, $full, $path) = split /\t/, $rec, 4;
     next unless defined $path;
     if ($total && time >= $PROG_NEXT) { $PROG_NEXT = time + 1; $show->($path) }
+    my $ft = time;
     scan_file($path, $lines, $full, $size);
     $done++;
+    if ($total && time - $ft >= 3) {   # file quét lâu: báo tên để người dùng biết (thường là file sinh tự động, dồn một dòng)
+      print STDERR "\r", ' ' x $PROG_W, "\r" if $PROG_W; $PROG_W = 0;
+      my $b = sprintf "[VNPTNAN_GATE] File qu\x{e9}t l\x{e2}u (%d gi\x{e2}y): %s. N\x{1ebf}u l\x{e0} file sinh t\x{1ef1} \x{111}\x{1ed9}ng, th\x{ea}m v\x{e0}o SKIP_PATHS_EXTRA.\n", time - $ft, do { my $x = $path; utf8::decode($x); $x };
+      utf8::encode($b); print STDERR $b;
+    }
   }
   if ($total) {
     print STDERR "\r", ' ' x $PROG_W, "\r" if $PROG_W;

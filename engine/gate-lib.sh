@@ -288,9 +288,11 @@ gate_scan_file_bash() {
   local skipids="" j
   for j in "${!RULE_ID[@]}"; do   # rule kind=skip: "id-regex|path-regex"
     [ "${RULE_KIND[$j]}" = skip ] || continue
-    printf '%s' "$path" | grep -qiE -- "${RULE_RE[$j]#*|}" && skipids="$skipids|${RULE_RE[$j]%%|*}"
+    # danh sách id ngăn bằng dấu phẩy, id có thể kết thúc bằng * -> regex ^(a|b|g-sast-.*)$
+    printf '%s' "$path" | grep -qiE -- "${RULE_RE[$j]#*|}" && skipids="$skipids|$(printf '%s' "${RULE_RE[$j]%%|*}" | sed 's/[.]/\\./g; s/[*]/.*/g; s/,/|/g')"
   done
   skipids=${skipids#|}
+  [ -n "$skipids" ] && skipids="^($skipids)$"
   for i in "${!RULE_ID[@]}"; do
     [ "${RULE_KIND[$i]}" = line ] || continue
     id=${RULE_ID[$i]}; level=${RULE_LEVEL[$i]}; re=${RULE_RE[$i]}; msg=${RULE_MSG[$i]}
