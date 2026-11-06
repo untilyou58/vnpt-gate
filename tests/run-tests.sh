@@ -148,6 +148,17 @@ else
   echo "  bỏ qua: máy không có perl"
 fi
 
+echo "== 6. Kiểm tra package NuGet (cache, giấy phép, báo trùng)"
+D=$(mktemp -d); mkdir -p "$D/r/p/obj" "$D/c/okpkg/1.0.0" "$D/c/msft.lib/2.0.0" "$D/c/gplpkg/1.0.0"
+printf '<Project><ItemGroup>\n<PackageReference Include="OkPkg" Version="1.0.0" />\n<PackageReference Include="Msft.Lib" Version="2.0.0" />\n<PackageReference Include="GplPkg" Version="1.0.0" />\n<PackageReference Include="Bia.Ten" Version="9.9.9" />\n</ItemGroup></Project>\n' > "$D/r/p/p.csproj"
+printf '<package><metadata><license type="expression">MIT</license></metadata></package>' > "$D/c/okpkg/1.0.0/okpkg.nuspec"
+printf '<package><metadata><licenseUrl>https://go.microsoft.com/fwlink/?LinkId=329770</licenseUrl></metadata></package>' > "$D/c/msft.lib/2.0.0/msft.lib.nuspec"
+printf '<package><metadata><license type="expression">GPL-3.0-only</license></metadata></package>' > "$D/c/gplpkg/1.0.0/gplpkg.nuspec"
+printf '{\r\n  "packageFolders": {\r\n    "/khong/co/": {},\r\n    "%s/": {}\r\n  },\r\n  "project": {}\r\n}\r\n' "$D/c" > "$D/r/p/obj/project.assets.json"
+out=$(cd "$D/r" && HOME="$D/none" USERPROFILE= NUGET_PACKAGES= VNPTNAN_GATE_HOME="$ROOT" GATE_LOG=/dev/null GATE_DEPS=warn bash "$ROOT/cli/vnptnan-gate" deps . 2>&1)
+if [ "$(printf '%s\n' "$out" | grep -c 'g-dep-')" = 2 ] && printf '%s' "$out" | grep -q 'GplPkg@1.0.0 license=GPL' && printf '%s' "$out" | grep -q 'g-dep-unresolved.*' && printf '%s' "$out" | grep -q 'Bia.Ten@9.9.9 không thấy'; then ok; else FAIL=$((FAIL + 1)); echo "  LỖI deps NuGet:"; printf '%s\n' "$out"; fi
+rm -rf "$D"
+
 echo "== 5. Bộ lọc gateway (gateway/litellm/gate_masker.py)"
 if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
   if out=$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/tests/gateway/test_gate_masker.py" 2>&1); then ok; echo "  $out"; else FAIL=$((FAIL + 1)); echo "$out"; fi
