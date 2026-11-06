@@ -1,14 +1,18 @@
 # Gateway AI của VNPTNAN_GATE: LiteLLM + bộ lọc gate_masker.py, dùng chung rules/ với cổng commit/push/prompt.
-# Khởi động (thư mục này):  powershell -File tao-khoa.ps1  (lần đầu)  ->  docker compose up -d
+# Khởi động (thư mục này):  powershell -File tao-khoa.ps1  (lần đầu)  ->  docker compose up -d --build
+# Image = LiteLLM gốc + pypdf để quét PDF (xem Dockerfile). Sửa Dockerfile thì chạy lại với --build.
 #
 # AN TOÀN CHUỖI CUNG ỨNG (LiteLLM bị cài mã độc 03/2026 và 21/10/2026):
-#  - Chốt phiên bản. Sau lần kéo đầu, thay dòng image bằng digest: ghcr.io/berriai/litellm@sha256:<digest>
+#  - Chốt phiên bản. Sau lần kéo đầu, thay tag trong Dockerfile (ARG LITELLM_IMAGE) bằng digest: ghcr.io/berriai/litellm@sha256:<digest>
 #    (docker image inspect ghcr.io/berriai/litellm:v1.106.7 --format '{{index .RepoDigests 0}}').
 #  - Không dùng tag latest / main-latest / main-stable. Nâng phiên bản chỉ sau khi ATTT duyệt và chạy lại kiem-tra.ps1.
+#  - Phiên bản LiteLLM chốt trong Dockerfile (ARG LITELLM_IMAGE), không phải ở đây.
 #  - Kiểm chữ ký: cosign verify --key https://raw.githubusercontent.com/BerriAI/litellm/e82a3c646908ba0a6ee0beddc4310d7a6cac4065/cosign.pub <image>
 services:
   litellm:
-    image: ghcr.io/berriai/litellm:v1.106.7
+    build:
+      context: .
+    image: vnptnan-gateway:1.106.7-pdf
     container_name: vnptnan-gateway
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     ports:
@@ -26,6 +30,8 @@ services:
       GATE_RULES_DIR: "/app/rules"
       GATE_GATEWAY_ACTION: "mask"            # mask: che rồi cho đi tiếp | block: chặn cả yêu cầu
       GATE_GATEWAY_BLOCK_IDS: "g-secret-private-key"   # luôn chặn các rule này
+      GATE_GATEWAY_PDF: "scan"               # lấy chữ trong PDF để quét; có secret thì chặn (PDF không che được)
+      GATE_GATEWAY_PDF_UNSCANNABLE: "allow"  # PDF scan ảnh/có mật khẩu/hỏng: allow (ghi log) | block
     read_only: true
     tmpfs:
       - /tmp

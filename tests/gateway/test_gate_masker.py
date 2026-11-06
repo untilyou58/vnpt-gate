@@ -67,7 +67,74 @@ check(len(miss) <= n // 50, f"{len(miss)}/{n} mẫu Gitleaks không bị che: {'
 r = asyncio.run(gm.GateMasker().async_pre_call_hook(None, None, {"messages": [{"role": "user", "content": "key " + aws}]}, "pass_through_endpoint"))
 check("[DA_CHE:" in r["messages"][0]["content"], "hook không che")
 
+# ---------------------------------------------------------------- tài liệu: chữ và PDF
+def make_pdf(lines):
+    """PDF tối thiểu, mỗi phần tử một dòng chữ (Helvetica). Không cần thư viện."""
+    esc = lambda t: t.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream = "BT /F1 11 Tf 50 750 Td 14 TL " + " ".join(f"({esc(t)}) Tj T*" for t in lines) + " ET"
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+            f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out, offs = "%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offs.append(len(out))
+        out += f"{i} 0 obj\n{o}\nendobj\n"
+    x = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n" + "".join(f"{o:010d} 00000 n \n" for o in offs)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{x}\n%%EOF\n"
+    return base64.b64encode(out.encode("latin-1")).decode()
+
+
+def pdf_req(b64):
+    return {"messages": [{"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "t1", "content": [
+            {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": b64}}]},
+        {"type": "text", "text": "Tóm tắt tài liệu này"}]}]}
+
+
+hook = gm.GateMasker().async_pre_call_hook
+
+# Tài liệu dạng chữ: phải che (trước đây bị bỏ qua)
+doc = {"messages": [{"role": "user", "content": [{"type": "document", "title": "cấu hình",
+        "source": {"type": "text", "media_type": "text/plain", "data": "Host=pg-host;Pass" + "word=Sup3rS3cr3tX9;"}}]}]}
+h = gm.mask_request(doc)
+check("g-secret-connstring" in h and "Sup3rS3cr3tX9" not in json.dumps(doc), "tài liệu dạng chữ không bị che")
+
+if gm.PdfReader is None:
+    check(not os.environ.get("CI"), "CI phải cài pypdf để kiểm thử PDF")
+    pdf_note = "bỏ qua phần PDF: chưa cài pypdf"
+else:
+    sec = make_pdf(["Huong dan ket noi CSDL", "Server=db01;Database=app;User Id=sa;Pass" + "word=Sup3rS3cr3tX9;"])
+    clean = make_pdf(["Bao cao tuan 45", "Tien do: 80 phan tram"])
+    blank = base64.b64encode(base64.b64decode(make_pdf([])))  .decode()
+    # PDF có secret: chặn, và chặn lại ở lượt sau (PDF gửi lại cùng lịch sử)
+    for lan in (1, 2):
+        try:
+            asyncio.run(hook(None, None, pdf_req(sec), "pass_through_endpoint"))
+            check(False, f"PDF có secret không bị chặn (lượt {lan})")
+        except gm.GateBlocked as e:
+            check("g-secret-connstring" in e.detail.get("rules", []), "lý do chặn PDF sai")
+    # PDF sạch: cho qua, không sửa dữ liệu PDF
+    r = pdf_req(clean); orig = copy.deepcopy(r)
+    out = asyncio.run(hook(None, None, r, "pass_through_endpoint"))
+    check(out["messages"][0]["content"][0] == orig["messages"][0]["content"][0], "PDF sạch bị sửa")
+    # PDF không có chữ / hỏng: mặc định cho qua, chế độ block thì chặn
+    hits, why = gm.scan_pdf(blank)
+    check(not hits and "chữ" in why, f"PDF trống phải báo không quét được: {why!r}")
+    hits, why = gm.scan_pdf(base64.b64encode(b"khong phai pdf").decode())
+    check(not hits and why, "PDF hỏng phải báo không quét được")
+    asyncio.run(hook(None, None, pdf_req(blank), "pass_through_endpoint"))
+    gm.PDF_UNSCANNABLE = "block"
+    try:
+        asyncio.run(hook(None, None, pdf_req(blank), "pass_through_endpoint"))
+        check(False, "PDF_UNSCANNABLE=block không chặn PDF trống")
+    except gm.GateBlocked:
+        pass
+    gm.PDF_UNSCANNABLE = "allow"
+    pdf_note = "PDF: chặn có secret, cho qua PDF sạch"
+
 if fails:
     print("\n".join("  FAIL: " + f for f in fails))
     sys.exit(1)
-print(f"gate_masker: đạt ({len(gm.GATE_RULES)} rule Gate, {len(gm.GL_RULES)} rule Gitleaks, {n - len(miss)}/{n} mẫu Gitleaks bị che)")
+print(f"gate_masker: đạt ({len(gm.GATE_RULES)} rule Gate, {len(gm.GL_RULES)} rule Gitleaks, {n - len(miss)}/{n} mẫu Gitleaks bị che; {pdf_note})")
