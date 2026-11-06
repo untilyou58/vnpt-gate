@@ -1,6 +1,6 @@
 # VNPTNAN_GATE: Cổng kiểm soát ATBMTT khi dùng AI trong phát triển phần mềm
 
-Chặn secret, dữ liệu cá nhân khách hàng, file cấm và package đáng ngờ **trước khi chúng rời máy dev**. Cổng chạy ở năm điểm:
+Chặn secret, dữ liệu cá nhân khách hàng, file cấm và package đáng ngờ **trước khi chúng rời máy dev**. Cổng chạy ở sáu điểm:
 
 | Điểm | Cơ chế |
 |---|---|
@@ -9,6 +9,7 @@ Chặn secret, dữ liệu cá nhân khách hàng, file cấm và package đáng
 | 2 · Push | `pre-push`: quét mọi commit sắp rời máy, kể cả commit tạo bằng lệnh plumbing |
 | 3 · Máy chủ GitLab | `pre-receive`: chặn cả máy chưa cài gì, có ở GitLab bản Free, không cần CI |
 | 4 · CI | Mẫu `ci/.gitlab-ci.yml`: quét toàn cây, dependency |
+| 5 · Gateway AI (thử nghiệm) | `gateway/litellm/`: LiteLLM và bộ lọc `gate_masker.py` che secret trong mọi dữ liệu gửi lên nhà cung cấp AI, kể cả file agent tự đọc. Dùng chung `rules/`. Xem `gateway/README.md` |
 
 Cổng không dùng AI để quyết định. Có hai bộ rule, áp trong cùng một lần đọc file:
 - **43 rule riêng** (`rules/gate.rules`, id `g-`): secret, CCCD, dump số điện thoại/email, chuỗi kết nối Oracle, file cấm, cảnh báo mã do AI sinh.

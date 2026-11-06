@@ -1,0 +1,28 @@
+# Cấu hình LiteLLM của gateway VNPTNAN_GATE.
+# Route /claude chuyển nguyên yêu cầu của Claude Code (kèm token đăng nhập thuê bao của dev, header Authorization)
+# tới api.anthropic.com sau khi gate-masker đã che/chặn secret. LiteLLM không giữ khoá Anthropic nào.
+# Dev gửi khoá LiteLLM trong header riêng: ANTHROPIC_CUSTOM_HEADERS="x-litellm-api-key: Bearer <khoá>".
+
+guardrails:
+  # Bộ lọc tự viết (gate_masker.py). KHÔNG dùng litellm_content_filter ở chế độ MASK trên route chuyển tiếp:
+  # LiteLLM chỉ kiểm tra rồi gửi bản gốc (đã kiểm chứng 06/11/2026, xem gate_masker.py).
+  - guardrail_name: "gate-masker"
+    litellm_params:
+      guardrail: gate_masker.GateMasker
+      mode: "pre_call"
+      default_on: true
+
+general_settings:
+  litellm_key_header_name: "x-litellm-api-key"
+  pass_through_endpoints:
+    - path: "/claude"
+      target: "https://api.anthropic.com"
+      include_subpath: true
+      forward_headers: true
+      auth: true
+      guardrails:
+        gate-masker:
+
+litellm_settings:
+  # Không ghi nội dung prompt/phản hồi vào log (log chỉ có tên rule và số lần che)
+  turn_off_message_logging: true

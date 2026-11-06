@@ -1,0 +1,34 @@
+# Gateway AI của VNPTNAN_GATE: LiteLLM + bộ lọc gate_masker.py, dùng chung rules/ với cổng commit/push/prompt.
+# Khởi động (thư mục này):  powershell -File tao-khoa.ps1  (lần đầu)  ->  docker compose up -d
+#
+# AN TOÀN CHUỖI CUNG ỨNG (LiteLLM bị cài mã độc 03/2026 và 21/10/2026):
+#  - Chốt phiên bản. Sau lần kéo đầu, thay dòng image bằng digest: ghcr.io/berriai/litellm@sha256:<digest>
+#    (docker image inspect ghcr.io/berriai/litellm:v1.106.7 --format '{{index .RepoDigests 0}}').
+#  - Không dùng tag latest / main-latest / main-stable. Nâng phiên bản chỉ sau khi ATTT duyệt và chạy lại kiem-tra.ps1.
+#  - Kiểm chữ ký: cosign verify --key https://raw.githubusercontent.com/BerriAI/litellm/e82a3c646908ba0a6ee0beddc4310d7a6cac4065/cosign.pub <image>
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.106.7
+    container_name: vnptnan-gateway
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      # Bản thử trên máy cá nhân: chỉ 127.0.0.1. Máy chủ nội bộ: đặt sau reverse proxy HTTPS, đổi thành "4000:4000".
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./gate_masker.py:/app/gate_masker.py:ro
+      - ../../rules:/app/rules:ro
+    env_file:
+      - .env                     # LITELLM_MASTER_KEY, tạo bằng tao-khoa.ps1; không đưa lên git
+    environment:
+      LITELLM_LOG: "INFO"
+      LITELLM_TELEMETRY: "False"
+      GATE_RULES_DIR: "/app/rules"
+      GATE_GATEWAY_ACTION: "mask"            # mask: che rồi cho đi tiếp | block: chặn cả yêu cầu
+      GATE_GATEWAY_BLOCK_IDS: "g-secret-private-key"   # luôn chặn các rule này
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    restart: "unless-stopped"

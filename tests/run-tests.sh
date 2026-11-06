@@ -148,6 +148,13 @@ else
   echo "  bỏ qua: máy không có perl"
 fi
 
+echo "== 5. Bộ lọc gateway (gateway/litellm/gate_masker.py)"
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
+  if out=$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/tests/gateway/test_gate_masker.py" 2>&1); then ok; echo "  $out"; else FAIL=$((FAIL + 1)); echo "$out"; fi
+else
+  echo "  bỏ qua: cần Python 3.10 trở lên"
+fi
+
 echo
 echo "Tổng: đạt $PASS, lỗi $FAIL"
 [ "$FAIL" = 0 ]

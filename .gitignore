@@ -8,3 +8,6 @@ docs/
 slide/
 video/
 __pycache__/
+
+# Khoá quản trị LiteLLM của gateway
+gateway/litellm/.env
