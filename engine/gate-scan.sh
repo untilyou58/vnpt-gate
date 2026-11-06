@@ -135,6 +135,10 @@ scan_tree() {
       case "$rel" in *$'\t'*|*$'\n'*) continue ;; esac
       printf '\t%s\t%s\t%s\n' "$dir/$rel" "$dir/$rel" "$rel"
     done < "$TMP/files" > "$TMP/list"
+    # Tiến độ: mặc định chỉ hiện khi chạy trong terminal; GATE_PROGRESS=1 bật, =0 tắt
+    if [ "${GATE_PROGRESS:-auto}" = 1 ] || { [ "${GATE_PROGRESS:-auto}" = auto ] && [ -t 2 ] && [ "${GATE_QUIET:-0}" != 1 ]; }; then
+      GATE_CORE_ARGS+=(--progress "$(wc -l < "$TMP/list" | tr -d ' ')")
+    fi
     gate_core_rows < <(perl "$GATE_ROOT/engine/scan-core.pl" "${GATE_CORE_ARGS[@]}" --list < "$TMP/list")
   else
     while IFS= read -r -d '' f; do

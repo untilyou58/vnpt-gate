@@ -45,6 +45,17 @@ Bị chặn nhầm thì khai ngoại lệ, không dùng `--no-verify`:
 - trên dòng: `gate-allow:<id> <lý do>`;
 - theo đường dẫn: `.vnptnan-gate/allow.rules`, qua merge request có người duyệt.
 
+**Bỏ qua thư mục không cần quét** (dữ liệu mẫu, mã sinh tự động, thư viện chép vào repo): tạo `.vnptnan-gate/gate.conf` ở gốc repo và commit qua merge request.
+
+```
+# regex đường dẫn (so với gốc repo), nhiều mục nối bằng |
+SKIP_PATHS_EXTRA=(^|/)legacy-dump/|(^|/)src/Generated/|\.designer\.cs$
+```
+
+Mặc định đã bỏ qua `node_modules`, `bin`, `obj`, `dist`, `build`, `out`, `packages`, `vendor`, `coverage`, `TestResults`, file `.min.js`/`.map`/lockfile, và file lớn hơn 5 MB. Thư mục bỏ qua thì không bị quét ở mọi điểm: commit, push, máy chủ GitLab, `scan tree`. Vì vậy chỉ bỏ qua thứ thật sự không chứa secret.
+
+`scan tree` hiện tiến độ (`Đang quét 2209/3500 file (63%)`), và khi xong thì báo số file đã bỏ qua theo `SKIP_PATHS`. Đặt `GATE_PROGRESS=0` để tắt dòng tiến độ, `GATE_PROGRESS=1` để bật khi không chạy trong terminal.
+
 ## Phát triển và phát hành
 
 ```bash

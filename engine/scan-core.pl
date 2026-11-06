@@ -28,6 +28,7 @@ while (@ARGV) {
   elsif ($a eq '--no-inline-allow') { $o{noinline} = 1 }
   elsif ($a eq '--one')      { @one = splice @ARGV, 0, 4 }
   elsif ($a eq '--list')     { $o{list} = 1 }
+  elsif ($a eq '--progress') { $o{progress} = shift @ARGV }   # tổng số file; in tiến độ ra stderr
   else { die "scan-core.pl: tham số lạ $a\n" }
 }
 my $MAX = $o{max} || 5242880;
@@ -137,7 +138,7 @@ sub line_allowed {
 sub scan_file {
   my ($path, $lines, $full, $size) = @_;
   (my $p = $path) =~ s{\\}{/}g;
-  return if $SKIP && $p =~ $SKIP;
+  if ($SKIP && $p =~ $SKIP) { $o{nskip}++; return }
 
   # Rule đường dẫn (trừ file mẫu kind=exempt)
   unless (grep { $p =~ $_ } @exempt) {
@@ -214,10 +215,32 @@ sub scan_file {
 
 if (@one) { scan_file(@one[0, 1, 2, 3]) }
 elsif ($o{list}) {
+  my $total = $o{progress} || 0;
+  my ($done, $last, $width) = (0, 0, 0);
+  my $t0 = time;
+  my $show = sub {   # một dòng tiến độ, ghi đè bằng \r, tối đa 1 lần/giây
+    my ($path) = @_;
+    my $pct = $total ? int(100 * $done / $total) : 0;
+    my $p = $path // ''; utf8::decode($p);              # cắt theo ký tự, không cắt giữa chữ có dấu
+    $p =~ s/^.*(.{40})$/...$1/s;
+    my $msg = sprintf "[VNPTNAN_GATE] \x{110}ang qu\x{e9}t %d/%d file (%d%%) %s", $done, $total, $pct, $p;
+    my $pad = $width > length($msg) ? ' ' x ($width - length($msg)) : '';
+    $width = length $msg;
+    my $b = "\r$msg$pad"; utf8::encode($b); print STDERR $b;
+  };
   while (my $rec = <STDIN>) {
     $rec =~ s/\r?\n$//;
     my ($size, $lines, $full, $path) = split /\t/, $rec, 4;
-    scan_file($path, $lines, $full, $size) if defined $path;
+    next unless defined $path;
+    if ($total && time != $last) { $last = time; $show->($path) }
+    scan_file($path, $lines, $full, $size);
+    $done++;
+  }
+  if ($total) {
+    print STDERR "\r", ' ' x $width, "\r";
+    my $b = sprintf "[VNPTNAN_GATE] \x{110}\x{e3} qu\x{e9}t %d file trong %d gi\x{e2}y; b\x{1ecf} qua %d file theo SKIP_PATHS.\n",
+      $done - ($o{nskip} || 0), time - $t0, $o{nskip} || 0;
+    utf8::encode($b); print STDERR $b;
   }
 }
 exit 0;
