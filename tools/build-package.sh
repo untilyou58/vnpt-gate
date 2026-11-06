@@ -31,6 +31,7 @@ make_cmd() { # $1 file đích, $2 chế độ mặc định
 'rem VNPTNAN_GATE '"$VER"' - bo cai dat mot file cho may dev Windows (Du an 2, Phong Giai phap 2).' \
 'rem Nhap dup de cai. Tham so: /audit  /enforce  /whatif' \
 'setlocal' \
+'set "PSModulePath="' \
 'set "VG_SELF=%~f0"' \
 'set "VG_MODE='"$2"'"' \
 'echo %~n0 | find /i "audit" >nul && set "VG_MODE=audit"' \

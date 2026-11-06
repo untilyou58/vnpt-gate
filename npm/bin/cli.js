@@ -116,14 +116,17 @@ async function fetchTo(s, dist, dest) {
 
 // ------------------------------------------------------------------ Windows: quyền admin, cài, lịch
 function isAdmin() { try { cp.execSync('net session', { stdio: 'ignore' }); return true; } catch (_) { return false; } }
-function ps(args) { return cp.spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', ...args], { stdio: opt.quiet ? 'ignore' : 'inherit' }).status; }
+// Windows PowerShell 5.1 gọi từ PowerShell 7 (pwsh) kế thừa PSModulePath của bản 7 và nạp nhầm module
+// (Get-Acl, Start-Process lỗi "module could not be loaded"). Bỏ biến này để 5.1 tự dựng lại đường dẫn mặc định.
+const PS_ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toLowerCase() !== 'psmodulepath'));
+function ps(args) { return cp.spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', ...args], { stdio: opt.quiet ? 'ignore' : 'inherit', env: PS_ENV }).status; }
 function elevate(extra) {
   if (opt.elevated) die('Đã chạy với quyền nâng nhưng vẫn không có quyền admin (net session lỗi). Mở terminal "Run as administrator" rồi chạy lại.');
   const q = (x) => `'${String(x).replace(/'/g, "''")}'`;
   const args = [__filename, cmd, ...extra, '--elevated'].map((x) => `'"${String(x).replace(/'/g, "''")}"'`).join(',');
   say('Đang xin quyền quản trị (UAC)...');
   const st = cp.spawnSync('powershell.exe', ['-NoProfile', '-Command',
-    `$p = Start-Process -FilePath ${q(process.execPath)} -ArgumentList @(${args}) -Verb RunAs -Wait -PassThru; exit $p.ExitCode`], { stdio: 'inherit' }).status;
+    `$p = Start-Process -FilePath ${q(process.execPath)} -ArgumentList @(${args}) -Verb RunAs -Wait -PassThru; exit $p.ExitCode`], { stdio: 'inherit', env: PS_ENV }).status;
   try { const tail = fs.readFileSync(LOG, 'utf8').trim().split('\n').slice(-6).map((l) => l.split('\t').slice(1).join(' ')); console.log(tail.join('\n')); } catch (_) { /* không có log */ }
   process.exit(st || 0);
 }
