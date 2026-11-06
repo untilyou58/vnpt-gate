@@ -126,14 +126,26 @@ scan_tree() {
   else
     find "$dir" -type f -print0
   fi > "$TMP/files"
-  while IFS= read -r -d '' f; do
-    [ -n "$f" ] || continue
-    rel=${f#"$dir"/}
-    [ -f "$dir/$rel" ] || continue
-    size=$(wc -c < "$dir/$rel" | tr -d ' ')
-    sed 's/\r$//' "$dir/$rel" > "$TMP/lines" 2>/dev/null || continue
-    gate_scan_file "$rel" "$TMP/lines" "$TMP/lines" "$size"
-  done < "$TMP/files"
+  if gate_use_perl; then
+    # Cả cây trong một tiến trình perl: đọc thẳng file trên đĩa, không chép tạm
+    gate_core_args
+    while IFS= read -r -d '' f; do
+      [ -n "$f" ] || continue
+      rel=${f#"$dir"/}
+      case "$rel" in *$'\t'*|*$'\n'*) continue ;; esac
+      printf '\t%s\t%s\t%s\n' "$dir/$rel" "$dir/$rel" "$rel"
+    done < "$TMP/files" > "$TMP/list"
+    gate_core_rows < <(perl "$GATE_ROOT/engine/scan-core.pl" "${GATE_CORE_ARGS[@]}" --list < "$TMP/list")
+  else
+    while IFS= read -r -d '' f; do
+      [ -n "$f" ] || continue
+      rel=${f#"$dir"/}
+      [ -f "$dir/$rel" ] || continue
+      size=$(wc -c < "$dir/$rel" | tr -d ' ')
+      sed 's/\r$//' "$dir/$rel" > "$TMP/lines" 2>/dev/null || continue
+      gate_scan_file "$rel" "$TMP/lines" "$TMP/lines" "$size"
+    done < "$TMP/files"
+  fi
   [ "$GATE_DEPS" != off ] && deps_check "$dir"
 }
 

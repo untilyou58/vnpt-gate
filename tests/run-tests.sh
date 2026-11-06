@@ -67,6 +67,13 @@ grep -q $'\taudit\t' "$GATE_LOG" && ok || fail "audit không ghi log"
 # Hạ cổng bằng biến môi trường khi không ở chế độ test: phải KHÔNG có tác dụng
 printf 'AWS_KEY=AKIAIOSFODNN7EXAMPLE\n' > env.txt; git add env.txt
 if GATE_MODE=audit GATE_SKIP_EXTRA=. git commit -q -m "env-bypass" 2>/dev/null; then fail "GATE_MODE=audit vượt được cổng"; git reset -q --hard HEAD~1; else ok; git reset -q env.txt; rm -f env.txt; fi
+# Rule nhập từ Gitleaks: token Stripe (Gate không có rule riêng) phải bị chặn; GATE_GITLEAKS=off không được tắt
+if command -v perl >/dev/null 2>&1; then
+  stripe=$(awk -F'\t' '$1=="gl-stripe-access-token"{print $2}' "$ROOT/tests/gitleaks-cases.tsv" | perl -MMIME::Base64 -ne 'print scalar reverse decode_base64($_)')
+  printf 'const k = "%s";\n' "$stripe" > pay.js; git add pay.js
+  if GATE_GITLEAKS=off GATE_ENGINE=bash git commit -q -m "stripe" 2>"$T/err"; then fail "token Stripe (rule Gitleaks) lọt qua, hoặc GATE_GITLEAKS=off tắt được"; git reset -q --hard HEAD~1
+  else ok; grep -q gl-stripe-access-token "$T/err" && ok || fail "thiếu mã gl-stripe-access-token trong thông báo"; git reset -q pay.js; rm -f pay.js; fi
+fi
 git reset -q --hard HEAD~1   # bỏ commit audit khỏi lịch sử, vì pre-push ở chế độ enforce sẽ bắt lại (đúng thiết kế)
 
 # Ngoại lệ dự án
@@ -117,6 +124,29 @@ done < "$ROOT/tests/prompt-cases.tsv"
 out=$(echo '{bad json' | GATE_LOG=$PL bash "$ROOT/engine/prompt-check.sh" --agent codex 2>/dev/null; echo "rc=$?")
 [ "$out" = "rc=0" ] && ok || fail "JSON hỏng phải cho qua với mã 0"
 rm -f "$PL"
+
+echo "== 4. Rule nhập từ Gitleaks (tests/gitleaks-cases.tsv: một mẫu sinh tự động cho mỗi rule)"
+if command -v perl >/dev/null 2>&1; then
+  GD=$(mktemp -d); : > "$GD/list"; declare -A WANT=(); k=0
+  while IFS=$'\t' read -r id enc; do
+    [ -n "$id" ] || continue; case "$id" in '#'*) continue ;; esac
+    k=$((k + 1)); printf '%s\n' "$enc" | perl -MMIME::Base64 -ne 'print scalar(reverse decode_base64($_)), "\n"' > "$GD/s$k.txt"
+    WANT[s$k.txt]=$id; printf '\t%s\t%s\t%s\n' "$GD/s$k.txt" "$GD/s$k.txt" "s$k.txt" >> "$GD/list"
+  done < "$ROOT/tests/gitleaks-cases.tsv"
+  perl "$ROOT/engine/scan-core.pl" --gitleaks "$ROOT/rules/gitleaks.jsonl" --list < "$GD/list" | cut -f2,3 | sort -u > "$GD/got"
+  miss=0
+  for f in "${!WANT[@]}"; do grep -qxF "${WANT[$f]}"$'\t'"$f" "$GD/got" || { miss=$((miss + 1)); [ $miss -le 5 ] && echo "  FAIL: ${WANT[$f]} không bắt được mẫu của chính nó"; }; done
+  [ $miss = 0 ] && ok || { FAIL=$((FAIL + 1)); echo "  $miss/$k mẫu không bắt được"; }
+  # Chống báo nhầm: mã nguồn của chính bộ công cụ không được khớp rule Gitleaks nào
+  ( cd "$ROOT" && git ls-files 2>/dev/null | grep -vE '^(tests/|rules/)' || find . -type f ! -path './.git/*' ! -path './tests/*' ! -path './rules/*' | sed 's|^\./||' ) \
+    | while IFS= read -r p; do printf '\t%s\t%s\t%s\n' "$ROOT/$p" "$ROOT/$p" "$p"; done > "$GD/self"
+  fp=$(perl "$ROOT/engine/scan-core.pl" --gitleaks "$ROOT/rules/gitleaks.jsonl" --list < "$GD/self" | grep -v $'\t1\t' | cut -f2,3 | head -n 5)
+  [ -z "$fp" ] && ok || fail "rule Gitleaks báo nhầm trên mã của bộ công cụ: $fp"
+  echo "  $k mẫu"
+  rm -rf "$GD"
+else
+  echo "  bỏ qua: máy không có perl"
+fi
 
 echo
 echo "Tổng: đạt $PASS, lỗi $FAIL"

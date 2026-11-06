@@ -209,7 +209,42 @@ gate_report_finding() {
 # gate_scan_file <path> <file-chứa-các-dòng-cần-quét> [file-đầy-đủ] [kích-thước-bytes]
 #   file-chứa-các-dòng: các dòng được thêm (diff) hoặc toàn bộ nội dung (quét cả cây); đã bỏ dấu + ở đầu.
 #   file-đầy-đủ: nội dung đầy đủ để kiểm rule count/size; bỏ trống thì dùng file-chứa-các-dòng.
+# Lõi Perl (engine/scan-core.pl): một tiến trình áp mọi rule của Gate và rule Gitleaks. Không có perl thì dùng bash.
+gate_use_perl() {
+  [ "${GATE_ENGINE:-}" = bash ] && return 1
+  command -v perl >/dev/null 2>&1 && [ -f "$GATE_ROOT/engine/scan-core.pl" ]
+}
+gate_core_args() {
+  GATE_CORE_ARGS=(--rules "$GATE_ROOT/rules/gate.rules" --skip "$GATE_SKIP_PATHS" --max-file "$GATE_MAX_FILE")
+  [ -f "$GATE_ROOT/rules/gitleaks.jsonl" ] && [ "${GATE_GITLEAKS:-on}" != off ] && GATE_CORE_ARGS+=(--gitleaks "$GATE_ROOT/rules/gitleaks.jsonl")
+  [ "${GATE_NO_INLINE_ALLOW:-0}" = 1 ] && GATE_CORE_ARGS+=(--no-inline-allow)
+  return 0
+}
+gate_core_rows() {
+  # Đọc kết quả của scan-core.pl từ stdin: level id path ln allowed masked msg
+  local level id path ln allowed masked msg
+  while IFS=$'\t' read -r level id path ln allowed masked msg; do
+    [ -n "$id" ] || continue
+    if [ "$allowed" = 1 ]; then
+      GATE_N_ALLOWED=$((GATE_N_ALLOWED + 1))
+      gate_log "$GATE_STAGE" "$level" "$id" allowed-inline "${GATE_PATH_PREFIX:-}$path" "$ln" "$masked"
+    else
+      gate_report_finding "$level" "$id" "$path" "$ln" "$masked" "$msg"
+    fi
+  done
+}
+
 gate_scan_file() {
+  if gate_use_perl; then
+    gate_core_args
+    gate_core_rows < <(perl "$GATE_ROOT/engine/scan-core.pl" "${GATE_CORE_ARGS[@]}" --one "$1" "$2" "${3:-$2}" "${4:-}")
+    return 0
+  fi
+  gate_scan_file_bash "$@"
+}
+
+# Bản bash (dự phòng khi máy không có perl; không có rule Gitleaks).
+gate_scan_file_bash() {
   local path=$1 lines=$2 full=${3:-$2} size=${4:-} i id level kind re msg hit ln text masked n thr
   gate_path_skipped "$path" && return 0
 

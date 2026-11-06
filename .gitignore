@@ -7,3 +7,4 @@ node_modules/
 docs/
 slide/
 video/
+__pycache__/

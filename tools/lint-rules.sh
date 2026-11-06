@@ -34,4 +34,33 @@ while IFS= read -r line || [ -n "$line" ]; do
   check_regex "$re" || { echo "packages.rules: regex không hợp lệ: $re"; err=1; }
 done < "$ROOT/rules/packages.rules"
 
-[ "$err" = 0 ] && echo "rules ok: ${#ids[@]} rule" || exit 1
+# Rule nhập từ Gitleaks: mọi regex biên dịch được bằng Perl, .pldata khớp .jsonl, id bắt đầu bằng gl- và không trùng
+nglr=0
+if [ -f "$ROOT/rules/gitleaks.jsonl" ]; then
+  if command -v perl >/dev/null 2>&1; then
+    nglr=$(perl -e '
+      use strict; use warnings; use File::Spec; my ($j, $p) = @ARGV; my $err = 0; my %seen;
+      my $d = do File::Spec->rel2abs($p) or die "gitleaks.pldata không nạp được: $@\n";
+      my @ids;
+      for my $o (@$d) {
+        next if $o->{_meta};
+        for my $a ($o->{_global} ? ($o->{_global}) : @{ $o->{allow} || [] }) {
+          for my $x (@{ $a->{regexes} || [] }, @{ $a->{paths} || [] }) { eval { qr/$x/ } or do { print STDERR "gitleaks: ngoại lệ hỏng: $x\n"; $err = 1 } }
+        }
+        next unless $o->{id};
+        push @ids, $o->{id};
+        $o->{id} =~ /^gl-/ or do { print STDERR "gitleaks: id phải bắt đầu bằng gl-: $o->{id}\n"; $err = 1 };
+        $seen{ $o->{id} }++ and do { print STDERR "gitleaks: id trùng: $o->{id}\n"; $err = 1 };
+        $o->{level} =~ /^(block|warn)$/ or do { print STDERR "gitleaks: mức sai ở $o->{id}\n"; $err = 1 };
+        for my $x (grep { defined } $o->{re}, $o->{path}) { eval { qr/$x/ } or do { print STDERR "gitleaks: regex hỏng ở $o->{id}: $@"; $err = 1 } }
+      }
+      open my $f, "<", $j or die; my $n = grep { /"id": "gl-/ } <$f>;
+      $n == @ids or do { print STDERR "gitleaks.pldata ($#ids+1) không khớp gitleaks.jsonl ($n): chạy lại tools/import-gitleaks.py\n"; $err = 1 };
+      print scalar @ids; exit $err;
+    ' "$ROOT/rules/gitleaks.jsonl" "$ROOT/rules/gitleaks.pldata") || err=1
+  else
+    echo "  (bỏ qua kiểm tra gitleaks.jsonl: máy không có perl)"
+  fi
+fi
+
+[ "$err" = 0 ] && echo "rules ok: ${#ids[@]} rule${nglr:+ + $nglr rule Gitleaks}" || exit 1
