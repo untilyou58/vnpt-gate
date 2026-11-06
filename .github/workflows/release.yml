@@ -46,8 +46,20 @@ jobs:
         run: |
           # Có NPM_TOKEN (lần đầu) thì dùng token; không có thì npm tự dùng Trusted Publishing qua OIDC
           if [ -n "$NPM_TOKEN" ]; then echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc; fi
-          npm publish --provenance --access public
+          name=$(node -p "require('./package.json').name"); ver=$(node -p "require('./package.json').version")
+          if npm view "$name@$ver" version >/dev/null 2>&1; then
+            echo "$name@$ver đã có trên npm, bỏ qua publish (chạy lại workflow)"
+          else
+            npm publish --provenance --access public
+          fi
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.cmd dist/*.zip dist/*.tgz dist/SHA256SUMS.txt --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          # Release tạo tay trên giao diện GitHub (Draft a new release) thì chỉ đính kèm file
+          files="dist/*.cmd dist/*.zip dist/*.tgz dist/SHA256SUMS.txt"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" $files --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" $files --title "$GITHUB_REF_NAME" --generate-notes
+          fi
