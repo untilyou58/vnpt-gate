@@ -170,6 +170,7 @@ scan_tree() {
       size=$(wc -c < "$dir/$rel" | tr -d ' ')
       sed 's/\r$//' "$dir/$rel" > "$TMP/lines" 2>/dev/null || continue
       gate_scan_file "$rel" "$TMP/lines" "$TMP/lines" "$size"
+      GATE_N_SCANNED=$((${GATE_N_SCANNED:-0} + 1))
     done < "$TMP/files"
   fi
   [ "$GATE_DEPS" != off ] && deps_check "$dir"
@@ -186,7 +187,9 @@ case "$mode" in
   range)   init; GATE_STAGE=pre-push; scan_range "${1:?old}" "${2:?new}" "${3:-}"; gate_summary "push" ;;
   receive) init; scan_receive; gate_summary "push" ;;
   commit)  init; GATE_STAGE=commit; scan_commit "${1:?sha}"; gate_summary "commit" ;;
-  tree)    init; scan_tree "${1:-.}"; gate_summary "cây làm việc" ;;
+  tree)    init; . "$ENGINE_DIR/gate-report.sh"; gate_report_begin
+           tdir=$(cd "${1:-.}" && pwd); scan_tree "$tdir"; gate_report_write "$tdir"
+           gate_summary "cây làm việc"; rc=$?; gate_report_say; exit $rc ;;
   deps)    init; GATE_STAGE=deps; deps_check "${1:-$(repo_root)}"; gate_summary "dependency" ;;
   version) echo "VNPTNAN_GATE $GATE_VERSION" ;;
   *) echo "Cách dùng: gate-scan.sh staged | range <old> <new> | receive | commit <sha> | tree [dir] | deps [dir]" >&2; exit 2 ;;

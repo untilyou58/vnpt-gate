@@ -33,6 +33,26 @@ jobs:
           bash tools/build-npm.sh
           bash tools/build-package.sh
           node dist/npm/bin/cli.js version
+      - name: Cài thật trên Linux qua npx (tài khoản thường, không sudo)
+        shell: bash
+        run: |
+          set -euo pipefail
+          tgz=$(ls dist/vnptnan-gate-*.tgz)
+          npx -y --package="$PWD/$tgz" vnptnan-gate-setup --hooks-path
+          export PATH="$HOME/.local/bin:$PATH"
+          vnptnan-gate version
+          d=$(mktemp -d) && cd "$d" && git init -q
+          k=AKIA; k="${k}IOSFODNN7ABCDXYZ"   # ghép lúc chạy để chính file này không chứa khoá mẫu
+          echo "aws_key = \"$k\"" > leak.txt && git add leak.txt
+          # chính sách phát hành có thể là audit: hook phải chạy và ghi phát hiện, chặn hay không tuỳ chế độ
+          out=$(git commit -qm thu 2>&1 || true); echo "$out"
+          echo "$out" | grep -q 'g-secret-aws' || { echo "hook qua core.hooksPath không chạy"; exit 1; }
+          vnptnan-gate doctor | grep -q 'hook qua core.hooksPath' || { echo "doctor không thấy hook"; exit 1; }
+          vnptnan-gate scan tree . || true
+          ls .vnptnan-gate/reports/moi-nhat.html
+          node "$(ls -d ~/.local/share/vnptnan-gate/current)/bin/cli.js" status | tee /dev/stderr | grep -q 'core.hooksPath'
+          npx -y --package="$GITHUB_WORKSPACE/$tgz" vnptnan-gate-setup uninstall
+          [ ! -e "$HOME/.local/bin/vnptnan-gate" ] && [ -z "$(git config --global --get core.hooksPath || true)" ] || { echo "gỡ chưa sạch"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: dist

@@ -10,6 +10,11 @@ Mã nguồn nằm trên GitHub. GitHub Actions kiểm thử và build. Gói phá
 4. Khi cập nhật, `cli.js` đọc bản `latest` trên npm. Có bản mới thì tải về, kiểm tra sha512 do npm công bố (sai thì không cài), giải nén có chặn đường dẫn ra ngoài thư mục, rồi cài đè. Log ghi ở `%ProgramData%\VNPTNAN_GATE\logs\update.log`.
 5. Mạng đi qua proxy: lúc cài, `cli.js` lấy proxy từ `HTTPS_PROXY` hoặc `npm config get https-proxy` (hoặc tham số `--proxy http://<máy>:<cổng>`; proxy cần đăng nhập thì ghi thêm tài khoản và mật khẩu theo cú pháp URL) và lưu vào `update.json`, để lịch chạy bằng SYSTEM vẫn ra được Internet. Có tôn trọng `NO_PROXY`.
 6. Chế độ lấy theo `npm/policy.json` của bản phát hành, trừ máy được cố định bằng `--audit` hoặc `--enforce`.
+7. **Linux/WSL/macOS:** không cần quyền root.
+   - Cài vào `~/.local/share/vnptnan-gate/current`, lệnh ở `~/.local/bin/vnptnan-gate`.
+   - Tự cập nhật bằng `systemd --user` (10:17 hằng ngày), không có thì dùng `cron`, không có nữa thì kiểm tra khi gọi lệnh. Vẫn kiểm sha512 như bản Windows.
+   - Hook: Git 2.54 trở lên dùng `git config --global hook.*`. Git cũ hơn thì cài theo từng repo, hoặc dùng `--hooks-path` (`core.hooksPath` toàn cục, gọi hook riêng của repo trước).
+   - Thay thư mục `current` bằng một lần đổi tên, có khoá chống hai lần cập nhật chạy cùng lúc.
 
 ## Chuẩn bị một lần
 

@@ -167,6 +167,24 @@ out=$(cd "$D/r2" && HOME="$D/none" USERPROFILE= NUGET_PACKAGES= VNPTNAN_GATE_HOM
 if [ "$(printf '%s\n' "$out" | grep -c 'g-dep-')" = 1 ] && printf '%s' "$out" | grep -q '2 package đã restore ở môi trường khác (/home/dev/.nuget/packages/)'; then ok; else FAIL=$((FAIL + 1)); echo "  LỖI deps NuGet (restore nơi khác):"; printf '%s\n' "$out"; fi
 rm -rf "$D"
 
+echo "== 7. Báo cáo sau khi quét cả cây"
+D=$(mktemp -d); ( cd "$D" && git init -q && printf '{ "Pass''word": "Rea1Secr#2026" }\n' > a.json && printf 'Server at 10.%s.0.1:5432\n' 88 > b.md )
+out=$(cd "$D" && VNPTNAN_GATE_HOME="$ROOT" GATE_LOG=/dev/null GATE_MODE=audit GATE_DEPS=off bash "$ROOT/cli/vnptnan-gate" scan tree . 2>&1)
+rep=$(ls -d "$D"/.vnptnan-gate/reports/quet-* 2>/dev/null | head -n1)
+if [ -n "$rep" ] && [ -f "$rep/bao-cao.html" ] && [ -f "$D/.vnptnan-gate/reports/moi-nhat.html" ] \
+   && [ "$(grep -c 'g-secret-password\|g-internal-ip' "$rep/phat-hien.csv")" = 2 ] \
+   && ! grep -q 'Rea1Secr' "$rep/bao-cao.html" "$rep/phat-hien.csv" \
+   && grep -qxF '.vnptnan-gate/reports/' "$D/.git/info/exclude" \
+   && [ -z "$(git -C "$D" status --porcelain | grep reports)" ] \
+   && printf '%s' "$out" | grep -q 'Báo cáo:'; then ok
+else FAIL=$((FAIL + 1)); echo "  LỖI báo cáo:"; printf '%s\n' "$out" | tail -3; ls -R "$D/.vnptnan-gate" 2>&1 | head; fi
+# quét lần hai không quét lại chính báo cáo
+out2=$(cd "$D" && VNPTNAN_GATE_HOME="$ROOT" GATE_LOG=/dev/null GATE_MODE=audit GATE_DEPS=off bash "$ROOT/cli/vnptnan-gate" scan tree . 2>&1)
+[ "$(printf '%s\n' "$out2" | grep -c 'AUDIT\|CANH-BAO')" = 2 ] && ok || { FAIL=$((FAIL + 1)); echo "  LỖI: lần quét hai đọc cả báo cáo"; printf '%s\n' "$out2" | head; }
+GATE_REPORT=0 bash -c 'cd "$1" && VNPTNAN_GATE_HOME="$2" GATE_LOG=/dev/null GATE_MODE=audit GATE_DEPS=off bash "$2/cli/vnptnan-gate" scan tree . >/dev/null 2>&1' _ "$D" "$ROOT"
+[ "$(ls -d "$D"/.vnptnan-gate/reports/quet-* | wc -l)" = 2 ] && ok || { FAIL=$((FAIL + 1)); echo "  LỖI: GATE_REPORT=0 vẫn ghi báo cáo"; }
+rm -rf "$D"
+
 echo "== 5. Bộ lọc gateway (gateway/litellm/gate_masker.py)"
 if command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
   if out=$(PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/tests/gateway/test_gate_masker.py" 2>&1); then ok; echo "  $out"; else FAIL=$((FAIL + 1)); echo "$out"; fi

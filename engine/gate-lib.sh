@@ -183,12 +183,21 @@ GATE_N_BLOCK=0; GATE_N_WARN=0; GATE_N_ALLOWED=0
 GATE_STAGE=${GATE_STAGE:-scan}
 GATE_REPO_NAME=${GATE_REPO_NAME:-}
 
+gate_report_row() {
+  # Ghi một phát hiện cho báo cáo (chỉ khi scan tree bật báo cáo). Bỏ tab/xuống dòng để giữ đúng cột.
+  [ -n "${GATE_FINDINGS_TSV:-}" ] || return 0
+  local a out=""
+  for a in "$@"; do a=${a//$'\t'/ }; a=${a//$'\n'/ }; a=${a//$'\r'/}; out+="$a"$'\t'; done
+  printf '%s\n' "${out%$'\t'}" >> "$GATE_FINDINGS_TSV"
+}
+
 gate_report_finding() {
   # $1 level, $2 id, $3 path, $4 lineno, $5 masked text, $6 message
   local level=$1 id=$2 path=$3 ln=$4 masked=$5 msg=$6 decision tag
   if gate_is_allowed "$id" "$path"; then
     GATE_N_ALLOWED=$((GATE_N_ALLOWED + 1))
     gate_log "$GATE_STAGE" "$level" "$id" allowed "${GATE_PATH_PREFIX:-}$path" "$ln" "$masked"
+    gate_report_row allowed "$level" "$id" "${GATE_PATH_PREFIX:-}$path" "$ln" "$masked" "$msg"
     return 0
   fi
   if [ "$level" = block ] && [ "$GATE_MODE" != audit ]; then
@@ -199,6 +208,7 @@ gate_report_finding() {
     GATE_N_WARN=$((GATE_N_WARN + 1)); decision=warn; tag=CANH-BAO
   fi
   gate_log "$GATE_STAGE" "$level" "$id" "$decision" "${GATE_PATH_PREFIX:-}$path" "$ln" "$masked"
+  gate_report_row "$decision" "$level" "$id" "${GATE_PATH_PREFIX:-}$path" "$ln" "$masked" "$msg"
   if [ -n "$ln" ]; then gate_say "$tag $id  ${GATE_PATH_PREFIX:-}$path:$ln  $msg"
   else gate_say "$tag $id  ${GATE_PATH_PREFIX:-}$path  $msg"; fi
   [ -n "$masked" ] && [ "$GATE_QUIET" != 1 ] && gate_say "    > $masked"

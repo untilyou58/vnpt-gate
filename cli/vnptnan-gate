@@ -61,7 +61,11 @@ case "$cmd" in
     if gate_load_rules; then echo "  [ok] rule: ${#RULE_ID[@]} rule hợp lệ"; else echo "  [LOI] rule không nạp được"; ok=0; fi
     for h in commit push; do
       ev=$(git config --system --get "hook.vnptnan-gate-$h.event" 2>/dev/null || git config --global --get "hook.vnptnan-gate-$h.event" 2>/dev/null)
+      hp=$(git config --get core.hooksPath 2>/dev/null)
       if [ -n "$ev" ]; then echo "  [ok] hook cấp máy: vnptnan-gate-$h -> $ev"
+      elif [ -n "$hp" ] && grep -q vnptnan-gate "${hp/#\~/$HOME}/pre-$h" 2>/dev/null; then echo "  [ok] hook qua core.hooksPath: $hp/pre-$h"
+      elif [ -n "$hp" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+        echo "  [THIEU] hook pre-$h: repo này dùng core.hooksPath=$hp (vd. husky) nên hook của cổng không chạy. Thêm vào $hp/pre-$h dòng: sh '$ROOT/hooks/pre-$h' \"\$@\""; ok=0
       elif [ -x "$(git rev-parse --git-dir 2>/dev/null)/hooks/pre-$h" ] 2>/dev/null && grep -q vnptnan-gate "$(git rev-parse --git-dir)/hooks/pre-$h"; then echo "  [ok] hook của repo: pre-$h"
       else
         gv=$(git --version 2>/dev/null | sed -E 's/[^0-9]*([0-9]+\.[0-9]+).*/\1/')

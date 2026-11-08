@@ -5,17 +5,25 @@
 //   npx @vnptnan/gate status          phiên bản đang cài, bản mới nhất trên kho, chế độ, lịch cập nhật
 //   npx @vnptnan/gate update [--check]    cập nhật ngay (lịch tự chạy lệnh này bằng tài khoản SYSTEM)
 //   npx @vnptnan/gate uninstall       gỡ cổng và lịch cập nhật
+// Linux/WSL/macOS: cài cho tài khoản hiện tại, không cần sudo: ~/.local/share/vnptnan-gate, lệnh ~/.local/bin/vnptnan-gate,
+// tự cập nhật bằng systemd --user (hoặc cron; dự phòng: kiểm tra mỗi ngày khi gọi vnptnan-gate). Hook: Git >= 2.54 đăng ký
+// bằng git config --global hook.*; Git cũ hơn thì từng repo chạy vnptnan-gate install-hooks, hoặc cài với --hooks-path
+// (core.hooksPath toàn cục, vẫn gọi hook riêng của repo trước).
 // Tuỳ chọn: --registry URL, --ca FILE (CA khi dùng kho nội bộ tự ký), --token T (khi kho cần đăng nhập),
 // --proxy URL (mặc định lấy HTTPS_PROXY hoặc npm config https-proxy lúc cài, lưu lại cho lịch cập nhật chạy bằng SYSTEM).
 // Không phụ thuộc gói ngoài. Cổng chạy bằng bash như trước; Node chỉ dùng để tải, kiểm tra và cài.
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), zlib = require('zlib');
-const crypto = require('crypto'), tls = require('tls'), https = require('https'), http = require('http');
+const crypto = require('crypto'), tls = require('tls'), https = require('https'), http = require('http'), os = require('os');
 
 const ROOT = path.resolve(__dirname, '..');
 const PKG = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const IS_WIN = process.platform === 'win32';
-const HOME = path.join(process.env.ProgramData || 'C:\\ProgramData', 'VNPTNAN_GATE');
+const HOME = IS_WIN ? path.join(process.env.ProgramData || 'C:\\ProgramData', 'VNPTNAN_GATE')
+  : path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'vnptnan-gate');
+const BIN_DIR = path.join(os.homedir(), '.local', 'bin');                 // Linux: nơi đặt lệnh vnptnan-gate
+const UNIT_DIR = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'systemd', 'user');
+const UNIT = 'vnptnan-gate-update';
 const CFG = path.join(HOME, 'update.json');
 const LOG = path.join(HOME, 'logs', 'update.log');
 const TASK = 'VNPTNAN_GATE Update';
@@ -28,12 +36,13 @@ for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--audit' || a === '--enforce') opt.mode = a.slice(2);
   else if (a === '--check' || a === '--quiet' || a === '--elevated') opt[a.slice(2)] = true;
+  else if (a === '--hooks-path') opt.hooksPath = true;
   else if (['--registry', '--ca', '--token', '--proxy', '--stage-only'].includes(a)) opt[a.slice(2).replace('-o', 'O')] = argv[++i];
   else die(`Tham số không hiểu: ${a}`);
 }
 
 function say(s) { if (!opt.quiet) console.log(s); log(s); }
-function log(s) { try { fs.mkdirSync(path.dirname(LOG), { recursive: true }); if (!fs.existsSync(LOG)) fs.writeFileSync(LOG, '\ufeff'); fs.appendFileSync(LOG, `${new Date().toISOString()}\t${s}\n`); } catch (_) { /* chưa có quyền ghi */ } }
+function log(s) { try { fs.mkdirSync(path.dirname(LOG), { recursive: true }); if (IS_WIN && !fs.existsSync(LOG)) fs.writeFileSync(LOG, '\ufeff'); fs.appendFileSync(LOG, `${new Date().toISOString()}\t${s}\n`); } catch (_) { /* chưa có quyền ghi */ } }
 function die(s, code = 1) { console.error(`[VNPTNAN_GATE] ${s}`); log(`LOI\t${s}`); process.exit(code); }
 function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { return null; } }
 const cmpVer = (a, b) => { const x = a.split(/[.-]/).map(Number), y = b.split(/[.-]/).map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); return 0; };
@@ -177,7 +186,10 @@ function modeFor(s, dir) {
 function saveConfig(s) {
   let ca = '';
   if (s.ca) { ca = path.join(HOME, 'gitlab-ca.crt'); if (path.resolve(s.ca) !== ca) fs.copyFileSync(s.ca, ca); }
-  fs.writeFileSync(CFG, JSON.stringify({ registry: s.registry, ca, token: s.token, mode: s.mode, proxy: s.proxy }, null, 2));
+  const prev = readJson(CFG) || {};
+  fs.mkdirSync(HOME, { recursive: true });
+  fs.writeFileSync(CFG, JSON.stringify({ registry: s.registry, ca, token: s.token, mode: s.mode, proxy: s.proxy,
+    auto: s.auto || prev.auto, hooks: s.hooks || prev.hooks }, null, 2), { mode: 0o600 });
 }
 function schedule() {
   const tr = `"${process.execPath}" "${path.join(HOME, 'current', 'bin', 'cli.js')}" update --quiet`;
@@ -188,9 +200,183 @@ function schedule() {
 }
 function installedVersion() { try { return fs.readFileSync(path.join(HOME, 'current', 'VERSION'), 'utf8').trim(); } catch (_) { return ''; } }
 
+
+// ------------------------------------------------------------------ Linux / WSL / macOS: cài cho tài khoản hiện tại
+const HOOKS = [['vnptnan-gate-commit', 'pre-commit'], ['vnptnan-gate-push', 'pre-push'], ['vnptnan-gate-msg', 'commit-msg']];
+const sq = (x) => `'${String(x).replace(/'/g, `'\\''`)}'`;                 // trích dẫn cho sh
+function which(c) { return cp.spawnSync('sh', ['-c', `command -v ${c}`], { stdio: 'ignore' }).status === 0; }
+function sh(c, args, input) { return cp.spawnSync(c, args, { encoding: 'utf8', input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] }); }
+function gitVersion() { const m = /(\d+)\.(\d+)\.(\d+)/.exec(sh('git', ['--version']).stdout || ''); return m ? m.slice(1).join('.') : '0.0.0'; }
+function gitGlobal(...a) { return sh('git', ['config', '--global', ...a]); }
+
+function installNix(src, mode, s) {
+  const cur = path.join(HOME, 'current'), nw = `${cur}.new`, old = `${cur}.old`;
+  fs.mkdirSync(HOME, { recursive: true });
+  fs.rmSync(nw, { recursive: true, force: true }); fs.rmSync(old, { recursive: true, force: true });
+  fs.cpSync(src, nw, { recursive: true, filter: (p) => !path.relative(src, p).split(/[\\/]/).includes('node_modules') });
+  const conf = path.join(nw, 'gate.conf');
+  fs.writeFileSync(conf, fs.readFileSync(conf, 'utf8').replace(/^MODE=.*$/m, `MODE=${mode}`));
+  for (const d of ['cli', 'hooks', 'engine', 'bin', 'server', 'tools']) {
+    const dd = path.join(nw, d); if (!fs.existsSync(dd)) continue;
+    for (const f of fs.readdirSync(dd)) { const p = path.join(dd, f); if (fs.statSync(p).isFile() && !/\.(cmd|ps1|md|rules|jsonl|pldata)$/.test(f)) fs.chmodSync(p, 0o755); }
+  }
+  // Thay thư mục current một lần (đổi tên), hook và lệnh đang trỏ vào đường dẫn current không bị gãy giữa chừng
+  if (fs.existsSync(cur)) fs.renameSync(cur, old);
+  fs.renameSync(nw, cur);
+  fs.rmSync(old, { recursive: true, force: true });
+  writeWrapper(s);
+  return cur;
+}
+
+function writeWrapper(s) {
+  const cur = path.join(HOME, 'current'), auto = (s && s.auto) || (readJson(CFG) || {}).auto || '';
+  const cli = path.join(cur, 'bin', 'cli.js');
+  // Dự phòng khi không có systemd/cron chạy: kiểm tra cập nhật nền, mỗi ngày một lần, lúc dùng lệnh
+  const fallback = auto === 'systemd' ? '' : [
+    `stamp=${sq(path.join(HOME, '.last-update-check'))}`,
+    'if [ -z "$(find "$stamp" -mmin -1440 2>/dev/null)" ]; then',
+    `  touch "$stamp" 2>/dev/null; ( ${sq(process.execPath)} ${sq(cli)} update --quiet >/dev/null 2>&1 & ) 2>/dev/null`,
+    'fi'].join('\n');
+  fs.mkdirSync(BIN_DIR, { recursive: true });
+  const w = path.join(BIN_DIR, 'vnptnan-gate');
+  fs.writeFileSync(w, ['#!/usr/bin/env bash', '# vnptnan-gate (cài bằng npx @vnptnan/gate; gỡ: npx @vnptnan/gate uninstall)', fallback,
+    `exec bash ${sq(path.join(cur, 'cli', 'vnptnan-gate'))} "$@"`, ''].filter((x) => x !== '').join('\n') + '\n', { mode: 0o755 });
+}
+
+function hooksPathDir() { return path.join(HOME, 'githooks'); }
+function registerHooksNix() {
+  const cur = path.join(HOME, 'current');
+  if (cmpVer(gitVersion(), '2.54.0') >= 0) {
+    // Cùng cơ chế với bản Windows (hook theo config, không chiếm .git/hooks), ở cấp người dùng thay vì cấp máy
+    for (const [name, ev] of HOOKS) {
+      gitGlobal('--replace-all', `hook.${name}.event`, ev);
+      gitGlobal('--replace-all', `hook.${name}.command`, `sh ${sq(path.join(cur, 'hooks', ev))}`);
+    }
+    return 'config';
+  }
+  if (!opt.hooksPath) return 'repo';
+  const dir = hooksPathDir(), existing = (gitGlobal('--get', 'core.hooksPath').stdout || '').trim();
+  if (existing && path.resolve(existing.replace(/^~/, os.homedir())) !== dir) {
+    say(`Cảnh báo: core.hooksPath toàn cục đang là ${existing} (công cụ khác đặt), không ghi đè. Trong từng repo chạy: vnptnan-gate install-hooks`);
+    return 'repo';
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [, ev] of HOOKS) {
+    // Gọi hook riêng của repo (.git/hooks/<ev>) trước, rồi tới cổng. pre-push đọc stdin nên giữ lại để đưa cho cả hai.
+    const keep = ev === 'pre-push';
+    fs.writeFileSync(path.join(dir, ev), [
+      '#!/bin/sh', `# VNPTNAN_GATE qua core.hooksPath (npx @vnptnan/gate --hooks-path). Hook riêng của repo vẫn chạy trước.`,
+      keep ? 'in=$(cat)' : '',
+      'gd=$(git rev-parse --git-dir 2>/dev/null)',
+      `if [ -n "$gd" ] && [ -x "$gd/hooks/${ev}" ] && ! grep -q vnptnan-gate "$gd/hooks/${ev}" 2>/dev/null; then`,
+      keep ? `  printf '%s\\n' "$in" | "$gd/hooks/${ev}" "$@" || exit $?` : `  "$gd/hooks/${ev}" "$@" || exit $?`,
+      'fi',
+      keep ? `printf '%s\\n' "$in" | exec sh ${sq(path.join(cur, 'hooks', ev))} "$@"` : `exec sh ${sq(path.join(cur, 'hooks', ev))} "$@"`,
+      ''].filter((x) => x !== '').join('\n') + '\n', { mode: 0o755 });
+  }
+  gitGlobal('core.hooksPath', dir);
+  return 'hooksPath';
+}
+
+function scheduleNix() {
+  const cli = path.join(HOME, 'current', 'bin', 'cli.js');
+  const st = sh('systemctl', ['--user', 'is-system-running']);
+  if (which('systemctl') && /^(running|degraded|starting)/.test((st.stdout || '').trim())) {
+    fs.mkdirSync(UNIT_DIR, { recursive: true });
+    fs.writeFileSync(path.join(UNIT_DIR, `${UNIT}.service`), `[Unit]\nDescription=VNPTNAN_GATE: cập nhật từ kho gói\n\n[Service]\nType=oneshot\nExecStart="${process.execPath}" "${cli}" update --quiet\n`);
+    fs.writeFileSync(path.join(UNIT_DIR, `${UNIT}.timer`), `[Unit]\nDescription=VNPTNAN_GATE: cập nhật hằng ngày\n\n[Timer]\nOnCalendar=*-*-* 10:17\nOnBootSec=10min\nRandomizedDelaySec=20min\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n`);
+    sh('systemctl', ['--user', 'daemon-reload']);
+    if (sh('systemctl', ['--user', 'enable', '--now', `${UNIT}.timer`]).status === 0) return 'systemd';
+  }
+  if (which('crontab')) {
+    const cur = (sh('crontab', ['-l']).stdout || '').split('\n').filter((l) => l && !l.includes('# vnptnan-gate'));
+    cur.push(`17 10 * * * ${sq(process.execPath)} ${sq(cli)} update --quiet # vnptnan-gate`);
+    if (sh('crontab', ['-'], `${cur.join('\n')}\n`).status === 0) return 'cron';
+  }
+  return 'wrapper';
+}
+
+function unscheduleNix() {
+  if (which('systemctl')) { sh('systemctl', ['--user', 'disable', '--now', `${UNIT}.timer`]); }
+  for (const f of [`${UNIT}.service`, `${UNIT}.timer`]) fs.rmSync(path.join(UNIT_DIR, f), { force: true });
+  if (which('systemctl')) sh('systemctl', ['--user', 'daemon-reload']);
+  if (which('crontab')) {
+    const r = sh('crontab', ['-l']);
+    if (r.status === 0 && r.stdout.includes('# vnptnan-gate')) sh('crontab', ['-'], `${r.stdout.split('\n').filter((l) => l && !l.includes('# vnptnan-gate')).join('\n')}\n`);
+  }
+}
+
+function withLock(fn) {
+  // Hai lần cập nhật chạy cùng lúc (lịch + lệnh) không được thay current chồng lên nhau
+  const lock = path.join(HOME, '.update.lock');
+  fs.mkdirSync(HOME, { recursive: true });
+  try { fs.mkdirSync(lock); } catch (_) {
+    const age = Date.now() - (fs.statSync(lock).mtimeMs || 0);
+    if (age < 10 * 60 * 1000) { say('Đang có lần cập nhật khác chạy, bỏ qua.'); return Promise.resolve(); }
+    fs.rmSync(lock, { recursive: true, force: true }); fs.mkdirSync(lock);
+  }
+  return Promise.resolve().then(fn).finally(() => fs.rmSync(lock, { recursive: true, force: true }));
+}
+
+async function setupNix() {
+  if (process.getuid && process.getuid() === 0 && !process.env.VNPTNAN_GATE_ALLOW_ROOT) {
+    die('Không chạy bằng sudo: cổng cài cho tài khoản đang dùng (~/.local), không cần quyền root.');
+  }
+  for (const t of ['bash', 'git']) if (!which(t)) die(`Thiếu ${t}. Cài: sudo apt install -y ${t}`);
+  if (!which('perl')) say('Cảnh báo: không có perl, cổng dùng lõi bash dự phòng (chậm hơn nhiều). Cài: sudo apt install -y perl');
+  const s = settings();
+  const stage = path.join(HOME, 'staging', PKG.version);
+  fs.rmSync(stage, { recursive: true, force: true }); fs.mkdirSync(stage, { recursive: true });
+  fs.cpSync(ROOT, stage, { recursive: true, filter: (p) => !path.relative(ROOT, p).split(/[\\/]/).includes('node_modules') });
+  const mode = modeFor(s, stage);
+  s.auto = scheduleNix();
+  installNix(stage, mode, s);
+  fs.rmSync(stage, { recursive: true, force: true });
+  s.hooks = registerHooksNix();
+  saveConfig(s);
+  say(`Đã cài VNPTNAN_GATE ${PKG.version} (MODE=${mode}) tại ${path.join(HOME, 'current')}`);
+  say(`Lệnh: ${path.join(BIN_DIR, 'vnptnan-gate')}${(process.env.PATH || '').split(':').includes(BIN_DIR) ? '' : `  (chưa có trong PATH: thêm export PATH="$HOME/.local/bin:$PATH" vào ~/.bashrc, rồi mở terminal mới)`}`);
+  say({ systemd: 'Tự cập nhật: systemd --user, hằng ngày 10:17.', cron: 'Tự cập nhật: cron 10:17 hằng ngày (WSL: cron cần đang chạy; dự phòng: kiểm tra mỗi ngày khi gọi vnptnan-gate).',
+    wrapper: 'Tự cập nhật: kiểm tra mỗi ngày một lần khi gọi vnptnan-gate (máy không có systemd/cron).' }[s.auto]);
+  say({ config: 'Hook: đăng ký cấp người dùng (git config --global hook.vnptnan-gate-*), áp cho mọi repo.',
+    hooksPath: `Hook: core.hooksPath toàn cục -> ${hooksPathDir()} (hook riêng của repo vẫn chạy trước).`,
+    repo: `Hook: Git ${gitVersion()} chưa hỗ trợ hook theo config (cần >= 2.54). Trong từng repo chạy: vnptnan-gate install-hooks\n      (hoặc cài lại với --hooks-path để áp cho mọi repo qua core.hooksPath)` }[s.hooks]);
+  say('Kiểm tra: vnptnan-gate doctor');
+}
+
+async function updateNix(s, cur, ver, dist) {
+  if (cur && cmpVer(ver, cur) <= 0) {
+    const conf = (() => { try { return fs.readFileSync(path.join(HOME, 'current', 'gate.conf'), 'utf8'); } catch (_) { return ''; } })();
+    const want = modeFor(s, path.join(HOME, 'current')), now = (/^MODE=(\w+)/m.exec(conf) || [])[1];
+    if (now && want !== now) { fs.writeFileSync(path.join(HOME, 'current', 'gate.conf'), conf.replace(/^MODE=.*$/m, `MODE=${want}`)); say(`Đổi chế độ ${now} -> ${want}`); }
+    else say(`Đã là bản mới nhất ${cur}`);
+    return;
+  }
+  const stage = path.join(HOME, 'staging', ver);
+  const n = await fetchTo(s, dist, stage);
+  const mode = modeFor(s, stage);
+  installNix(stage, mode, readJson(CFG) || {});
+  fs.rmSync(stage, { recursive: true, force: true });
+  const saved = readJson(CFG) || {};
+  if (saved.hooks === 'config' || saved.hooks === 'hooksPath') { opt.hooksPath = saved.hooks === 'hooksPath'; registerHooksNix(); }
+  say(`Đã cập nhật ${cur || '(chưa cài)'} -> ${ver} (${n} file, MODE=${mode})`);
+}
+
+async function uninstallNix() {
+  unscheduleNix();
+  for (const [name] of HOOKS) { gitGlobal('--unset-all', `hook.${name}.event`); gitGlobal('--unset-all', `hook.${name}.command`); }
+  const hp = (gitGlobal('--get', 'core.hooksPath').stdout || '').trim();
+  if (hp && path.resolve(hp.replace(/^~/, os.homedir())) === hooksPathDir()) gitGlobal('--unset', 'core.hooksPath');
+  const w = path.join(BIN_DIR, 'vnptnan-gate');
+  if (fs.existsSync(w) && fs.readFileSync(w, 'utf8').includes('npx @vnptnan/gate')) fs.rmSync(w, { force: true });
+  fs.rmSync(HOME, { recursive: true, force: true });
+  console.log('Đã gỡ VNPTNAN_GATE, lịch tự cập nhật và hook cấp người dùng.');
+  console.log('Repo đã chạy "vnptnan-gate install-hooks": xoá .git/hooks/{pre-commit,pre-push,commit-msg} (hook cũ, nếu có, nằm ở *.local).');
+}
+
 // ------------------------------------------------------------------ lệnh
 async function setup() {
-  if (!IS_WIN) die('Lệnh cài này dành cho máy dev Windows. Máy chủ GitLab dùng installer/install-server.sh.');
+  if (!IS_WIN) return setupNix();
   const s = settings();
   if (!isAdmin()) return elevate(passArgs(s));
   const stage = path.join(HOME, 'staging', PKG.version);
@@ -212,7 +398,7 @@ async function update() {
   const { ver, dist } = await latest(s);
   if (opt.check) { console.log(`Đang cài: ${cur || '(chưa cài)'} · Trên kho: ${ver}${cur && cmpVer(ver, cur) > 0 ? ' · có bản mới' : ''}`); return; }
   if (opt.stageOnly) { const n = await fetchTo(s, dist, path.resolve(opt.stageOnly)); console.log(`Đã tải ${ver}, kiểm tra toàn vẹn đạt, giải nén ${n} file vào ${opt.stageOnly}`); return; }
-  if (!IS_WIN) die('Cập nhật chỉ chạy trên máy dev Windows.');
+  if (!IS_WIN) return withLock(() => updateNix(s, cur, ver, dist));
   if (!isAdmin()) return elevate(passArgs(s));
   if (cur && cmpVer(ver, cur) <= 0) {
     // Cùng phiên bản: chỉ đổi chế độ nếu chính sách gói khác chế độ đang chạy
@@ -234,16 +420,23 @@ async function update() {
 
 async function status() {
   const s = settings(), saved = readJson(CFG) || {};
-  console.log(`Đang cài   : ${installedVersion() || '(chưa cài)'}${IS_WIN ? ` tại ${path.join(HOME, 'current')}` : ''}`);
+  console.log(`Đang cài   : ${installedVersion() || '(chưa cài)'} tại ${path.join(HOME, 'current')}`);
   console.log(`Kho gói    : ${s.registry}${s.ca ? ` (CA: ${s.ca})` : ''}`);
   console.log(`Proxy      : ${s.proxy ? s.proxy.replace(/\/\/[^@/]*@/, '//***@') : '(đi thẳng)'}`);
   console.log(`Chế độ     : ${saved.mode ? `${saved.mode} (cố định trên máy này)` : 'theo policy.json của gói'}`);
   try { const { ver } = await latest(s); console.log(`Bản mới nhất: ${ver}`); } catch (e) { console.log(`Bản mới nhất: không đọc được (${e.message})`); }
   if (IS_WIN) console.log(`Lịch cập nhật: ${cp.spawnSync('schtasks.exe', ['/Query', '/TN', TASK], { stdio: 'ignore' }).status === 0 ? 'có' : 'CHƯA CÓ'}`);
+  else {
+    const auto = saved.auto || '', active = auto === 'systemd' ? sh('systemctl', ['--user', 'is-active', `${UNIT}.timer`]).stdout.trim() === 'active'
+      : auto === 'cron' ? (sh('crontab', ['-l']).stdout || '').includes('# vnptnan-gate') : auto === 'wrapper';
+    console.log(`Tự cập nhật: ${{ systemd: 'systemd --user', cron: 'cron', wrapper: 'kiểm tra khi gọi vnptnan-gate' }[auto] || 'CHƯA CÓ'}${auto && !active ? ' (KHÔNG hoạt động)' : ''}`);
+    console.log(`Hook       : ${{ config: 'git config --global hook.*', hooksPath: `core.hooksPath -> ${hooksPathDir()}`, repo: 'từng repo (vnptnan-gate install-hooks)' }[saved.hooks] || '(chưa cài)'}`);
+    console.log(`Lệnh       : ${path.join(BIN_DIR, 'vnptnan-gate')}${fs.existsSync(path.join(BIN_DIR, 'vnptnan-gate')) ? '' : ' (CHƯA CÓ)'}`);
+  }
 }
 
 async function uninstall() {
-  if (!IS_WIN) die('Chỉ dùng trên máy dev Windows.');
+  if (!IS_WIN) return uninstallNix();
   if (!isAdmin()) return elevate([]);
   for (const t of [TASK, `${TASK} (khoi dong)`]) cp.spawnSync('schtasks.exe', ['/Delete', '/F', '/TN', t], { stdio: 'ignore' });
   const un = path.join(HOME, 'current', 'installer', 'uninstall.ps1');
