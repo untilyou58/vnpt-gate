@@ -80,5 +80,6 @@ g-allow-psql-var	warn	allow	password[ ]+:["'][a-z_][a-z0-9_]*["']	Biến psql (A
 # Rule heuristic (g-secret-password, g-secret-generic-key, g-sast-*): không áp cho file dịch giao diện và mã kiểm thử.
 # Secret có định dạng riêng (Gitleaks, g-secret-aws, ghp_...) và chuỗi kết nối vẫn được quét ở các file này.
 g-skip-i18n	warn	skip	g-secret-password|(^|/)(i18n|locales?|lang|langs|translations?)/[^ ]*\.(json|ya?ml|po|resx|properties|arb)$|\.resx$	File dịch giao diện: chữ "password" là nhãn, không phải mật khẩu.
+g-skip-docs	warn	skip	g-sast-*,g-ai-*|\.(md|markdown|csv|tsv|txt|rst|adoc)$	Rule kiểm mã nguồn (SAST, mã AI để dở) không áp cho tài liệu và file dữ liệu.
 g-skip-tests	warn	skip	g-secret-password,g-secret-generic-key,g-sast-*|(^|/)(tests?|__tests__|specs?)/|[^/]\.Tests?/|[._-](tests?|spec)\.[a-z]+$	Mã kiểm thử: mật khẩu/token giả cho test; mẫu SAST trong test không chạy ở production.
 # Ngoại lệ tại chỗ: thêm "gate-allow:<id-rule> <lý do>" vào chính dòng đó (engine xử lý, chỉ bỏ qua đúng rule đó, vẫn ghi log).

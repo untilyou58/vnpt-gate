@@ -92,3 +92,7 @@ file:deploy/db-init/01-app-role.sh	ALTER ROLE halocom_app WITH PASSWORD :'app_pa
 file:be-base/tests/Halocom.Api.Tests/SecurityReview20261024Tests.cs	    user!.RefreshToken = "abcdefghijklmnop1234567890";	-	-
 file:be-base/tests/Halocom.Api.Tests/WorkerQueueTests.cs	    await using (var listen = new NpgsqlCommand($"LISTEN {WorkSignal.Channel}", conn))	-	-
 file:src/Services/TokenService.cs	    var refresh_token = "abcdefghijklmnop1234567890";	g-secret-generic-key	block
+file:fe/.github/prompts/ui-ux-pro-max/data/stacks/nextjs.csv	50,Security,Sanitize user input,Never trust user input,Escape sanitize via dangerouslySetInnerHTML,	-	-
+file:fe/.serena/memories/frontend-error-handling-guide.md	  // ... rest of the code	-	-
+file:fe/src/components/HtmlPreviewModal.tsx	  <div dangerouslySetInnerHTML={{ __html: html }} />	g-sast-eval	warn
+file:docs/setup.md	  "Password": "Rea1Secr#2026"	g-secret-password	block

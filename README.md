@@ -71,6 +71,10 @@ SKIP_PATHS_EXTRA=(^|/)legacy-dump/|(^|/)src/Generated/|\.designer\.cs$
 
 Mặc định đã bỏ qua `node_modules`, `bin`, `obj`, `dist`, `build`, `out`, `packages`, `vendor`, `coverage`, `TestResults`, file `.min.js`/`.map`/lockfile, và file lớn hơn 5 MB. Thư mục bỏ qua thì không bị quét ở mọi điểm: commit, push, máy chủ GitLab, `scan tree`. Vì vậy chỉ bỏ qua thứ thật sự không chứa secret.
 
+**Kiểm tra package:** cổng luôn kiểm package khai trong `package.json` / `.csproj` có thật hay không, vì AI hay bịa tên package. **Giấy phép thì mặc định không kiểm**: nhiều package cũ chỉ khai `licenseUrl` hoặc file LICENSE nên báo rất nhiều. Muốn bật thì đặt `DEPS_LICENSE` trong `gate.conf` hoặc `.vnptnan-gate/gate.conf` của repo:
+- `known`: chỉ báo package có giấy phép đọc được và nằm trong `rules/packages.rules` (GPL, AGPL, LGPL…);
+- `all`: báo thêm package không rõ giấy phép.
+
 **Báo cáo sau khi quét cả cây:** mỗi lần `scan tree` ghi một thư mục `.vnptnan-gate/reports/quet-<ngày-giờ>/` ở gốc repo, gồm:
 - `bao-cao.html`: mở bằng trình duyệt. Có tổng số, bảng theo rule kèm hướng xử lý, chi tiết từng phát hiện, ô lọc.
 - `phat-hien.csv`: mở bằng Excel, có sẵn cột "Người xử lý" và "Trạng thái" để giao việc.

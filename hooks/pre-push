@@ -2,6 +2,6 @@
 # Hook pre-push của VNPTNAN_GATE: quét mọi commit sắp rời máy, kể cả commit tri thức của VNPTNAN_HARNESS (dùng lệnh plumbing, không qua pre-commit).
 # stdin: <local ref> <local sha> <remote ref> <remote sha>, một dòng mỗi ref.
 # Chống hạ cổng bằng biến môi trường (vd. GATE_MODE=audit git commit): hook chỉ tin gate.conf.
-unset VNPTNAN_GATE_HOME GATE_ROOT GATE_MODE GATE_DEPS GATE_DEPS_AUDIT GATE_SKIP_PATHS GATE_SKIP_EXTRA GATE_MAX_COMMITS GATE_MAX_FILE GATE_QUIET GATE_SERVER GATE_ENGINE GATE_GITLEAKS GATE_CORE_ARGS
+unset VNPTNAN_GATE_HOME GATE_ROOT GATE_MODE GATE_DEPS GATE_DEPS_AUDIT GATE_DEPS_LICENSE GATE_SKIP_PATHS GATE_SKIP_EXTRA GATE_MAX_COMMITS GATE_MAX_FILE GATE_QUIET GATE_SERVER GATE_ENGINE GATE_GITLEAKS GATE_CORE_ARGS
 root=$(cd "$(dirname "$0")/.." && pwd)
 GATE_STAGE_NAME=pre-push exec bash "$root/engine/gate-scan.sh" receive

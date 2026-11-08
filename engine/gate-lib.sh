@@ -18,6 +18,7 @@ GATE_PREFIX="[VNPTNAN_GATE]"
 GATE_MODE=${GATE_MODE:-}            # enforce | audit
 GATE_DEPS=${GATE_DEPS:-}            # block | warn | off
 GATE_DEPS_AUDIT=${GATE_DEPS_AUDIT:-} # 1 = chạy npm audit / dotnet list --vulnerable (cần mạng, chậm)
+GATE_DEPS_LICENSE=${GATE_DEPS_LICENSE:-} # off (mặc định) | known | all — kiểm giấy phép package
 GATE_MAX_COMMITS=${GATE_MAX_COMMITS:-}
 GATE_MAX_FILE=${GATE_MAX_FILE:-}    # bytes; file lớn hơn không quét theo dòng
 GATE_SKIP_PATHS=${GATE_SKIP_PATHS:-}
@@ -37,6 +38,7 @@ gate_load_conf_file() {
       MODE)        [ -z "$GATE_MODE" ] && GATE_MODE=$val ;;
       DEPS)        [ -z "$GATE_DEPS" ] && GATE_DEPS=$val ;;
       DEPS_AUDIT)  [ -z "$GATE_DEPS_AUDIT" ] && GATE_DEPS_AUDIT=$val ;;
+      DEPS_LICENSE) [ -z "$GATE_DEPS_LICENSE" ] && GATE_DEPS_LICENSE=$val ;;
       MAX_COMMITS) [ -z "$GATE_MAX_COMMITS" ] && GATE_MAX_COMMITS=$val ;;
       MAX_FILE)    [ -z "$GATE_MAX_FILE" ] && GATE_MAX_FILE=$val ;;
       SKIP_PATHS)  [ -z "$GATE_SKIP_PATHS" ] && GATE_SKIP_PATHS=$val ;;
@@ -54,6 +56,7 @@ gate_load_conf() {
   : "${GATE_MODE:=enforce}"
   : "${GATE_DEPS:=warn}"
   : "${GATE_DEPS_AUDIT:=0}"
+  : "${GATE_DEPS_LICENSE:=off}"
   : "${GATE_MAX_COMMITS:=500}"
   : "${GATE_MAX_FILE:=5242880}"
   : "${GATE_SKIP_PATHS:=(^|/)(node_modules|bin|obj|dist|build|out|packages|\.git|vendor|coverage|TestResults)/|\.(min\.js|min\.css|map|lock|snap)$|(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|packages\.lock\.json)$|(^|/)\.vnptnan-gate/}"

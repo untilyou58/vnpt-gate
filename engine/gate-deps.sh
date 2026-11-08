@@ -34,7 +34,11 @@ deps_check_one() {
           gate_report_finding "$(deps_level "${PKG_LEVEL[$i]}")" "g-dep-package" "$src" "" "$eco $name@$ver" "${PKG_MSG[$i]}"
         fi ;;
       deny-license)
+        # DEPS_LICENSE: off = không kiểm giấy phép; known = chỉ báo giấy phép ĐỌC ĐƯỢC và nằm trong danh sách
+        # (GPL, AGPL...); all = báo cả package không rõ giấy phép (nhiều package cũ chỉ khai licenseUrl/file)
+        [ "$GATE_DEPS_LICENSE" = off ] && continue
         [ "$nolic" = nolic ] && continue
+        if [ "$GATE_DEPS_LICENSE" != all ] && printf '%s\n' "$lic" | grep -qiE '^(UNLICENSED|UNKNOWN|SEE LICENSE|NONE)?$'; then continue; fi
         if printf '%s\n' "$lic" | grep -qiE -- "${PKG_RE[$i]}"; then
           gate_report_finding "$(deps_level "${PKG_LEVEL[$i]}")" "g-dep-license" "$src" "" "$eco $name@$ver license=${lic:-?}" "${PKG_MSG[$i]}"
         fi ;;

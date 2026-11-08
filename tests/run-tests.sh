@@ -157,8 +157,14 @@ printf '<package><metadata><license type="expression">MIT</license></metadata></
 printf '<package><metadata><licenseUrl>https://go.microsoft.com/fwlink/?LinkId=329770</licenseUrl></metadata></package>' > "$D/c/msft.lib/2.0.0/msft.lib.nuspec"
 printf '<package><metadata><license type="expression">GPL-3.0-only</license></metadata></package>' > "$D/c/gplpkg/1.0.0/gplpkg.nuspec"
 printf '{\r\n  "packageFolders": {\r\n    "/khong/co/": {},\r\n    "%s/": {}\r\n  },\r\n  "project": {}\r\n}\r\n' "$D/c" > "$D/r/p/obj/project.assets.json"
-out=$(cd "$D/r" && HOME="$D/none" USERPROFILE= NUGET_PACKAGES= VNPTNAN_GATE_HOME="$ROOT" GATE_LOG=/dev/null GATE_DEPS=warn bash "$ROOT/cli/vnptnan-gate" deps . 2>&1)
+out=$(cd "$D/r" && HOME="$D/none" USERPROFILE= NUGET_PACKAGES= VNPTNAN_GATE_HOME="$ROOT" GATE_LOG=/dev/null GATE_DEPS=warn GATE_DEPS_LICENSE=known bash "$ROOT/cli/vnptnan-gate" deps . 2>&1)
 if [ "$(printf '%s\n' "$out" | grep -c 'g-dep-')" = 2 ] && printf '%s' "$out" | grep -q 'GplPkg@1.0.0 license=GPL' && printf '%s' "$out" | grep -q 'g-dep-unresolved.*' && printf '%s' "$out" | grep -q 'Bia.Ten@9.9.9 không có'; then ok; else FAIL=$((FAIL + 1)); echo "  LỖI deps NuGet:"; printf '%s\n' "$out"; fi
+# Mặc định (DEPS_LICENSE=off): không báo giấy phép, vẫn báo package bịa tên
+out=$(cd "$D/r" && HOME="$D/none" USERPROFILE= NUGET_PACKAGES= VNPTNAN_GATE_HOME="$ROOT" GATE_LOG=/dev/null GATE_DEPS=warn bash "$ROOT/cli/vnptnan-gate" deps . 2>&1)
+if ! printf '%s' "$out" | grep -q 'g-dep-license' && printf '%s' "$out" | grep -q 'Bia.Ten@9.9.9 không có'; then ok; else FAIL=$((FAIL + 1)); echo "  LỖI deps mặc định:"; printf '%s\n' "$out"; fi
+# all: báo cả package không rõ giấy phép (OkPkg rõ MIT, không báo; Msft.Lib suy được từ licenseUrl, không báo)
+out=$(cd "$D/r" && HOME="$D/none" USERPROFILE= NUGET_PACKAGES= VNPTNAN_GATE_HOME="$ROOT" GATE_LOG=/dev/null GATE_DEPS=warn GATE_DEPS_LICENSE=all bash "$ROOT/cli/vnptnan-gate" deps . 2>&1)
+if [ "$(printf '%s\n' "$out" | grep -c 'g-dep-license')" = 1 ] && printf '%s' "$out" | grep -q 'GplPkg'; then ok; else FAIL=$((FAIL + 1)); echo "  LỖI deps all:"; printf '%s\n' "$out"; fi
 # Restore ở môi trường khác (WSL/container): project.assets.json có tên package nhưng cache không đọc được -> một dòng
 mkdir -p "$D/r2/q/obj"
 printf '<Project><ItemGroup>\n<PackageReference Include="Xunit" Version="2.5.3" />\n<PackageReference Include="Npgsql" Version="10.0.0" />\n</ItemGroup></Project>\n' > "$D/r2/q/q.csproj"
