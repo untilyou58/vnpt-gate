@@ -47,12 +47,16 @@ jobs:
           # chính sách phát hành có thể là audit: hook phải chạy và ghi phát hiện, chặn hay không tuỳ chế độ
           out=$(git commit -qm thu 2>&1 || true); echo "$out"
           echo "$out" | grep -q 'g-secret-aws' || { echo "hook qua core.hooksPath không chạy"; exit 1; }
-          vnptnan-gate doctor | grep -q 'hook qua core.hooksPath' || { echo "doctor không thấy hook"; exit 1; }
+          # Git >= 2.54 (máy CI): hook theo config cấp người dùng; Git cũ hơn: core.hooksPath (--hooks-path)
+          d=$(vnptnan-gate doctor 2>&1 || true); echo "$d"
+          grep -qE 'hook (cấp người dùng|cấp máy|qua core.hooksPath)' <<< "$d" || { echo "doctor không thấy hook"; exit 1; }
           vnptnan-gate scan tree . || true
           ls .vnptnan-gate/reports/moi-nhat.html
-          node "$(ls -d ~/.local/share/vnptnan-gate/current)/bin/cli.js" status | tee /dev/stderr | grep -q 'core.hooksPath'
+          st=$(node "$(ls -d ~/.local/share/vnptnan-gate/current)/bin/cli.js" status 2>&1 || true); echo "$st"
+          grep -qE 'Hook +: (git config --global hook|core.hooksPath)' <<< "$st" || { echo "status không thấy hook"; exit 1; }
           npx -y --package="$GITHUB_WORKSPACE/$tgz" vnptnan-gate-setup uninstall
-          [ ! -e "$HOME/.local/bin/vnptnan-gate" ] && [ -z "$(git config --global --get core.hooksPath || true)" ] || { echo "gỡ chưa sạch"; exit 1; }
+          [ ! -e "$HOME/.local/bin/vnptnan-gate" ] && [ -z "$(git config --global --get core.hooksPath || true)" ] \
+            && [ -z "$(git config --global --get-regexp '^hook\.vnptnan-gate' || true)" ] || { echo "gỡ chưa sạch"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: dist

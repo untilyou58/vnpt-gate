@@ -338,7 +338,7 @@ async function setupNix() {
   say(`Lệnh: ${path.join(BIN_DIR, 'vnptnan-gate')}${(process.env.PATH || '').split(':').includes(BIN_DIR) ? '' : `  (chưa có trong PATH: thêm export PATH="$HOME/.local/bin:$PATH" vào ~/.bashrc, rồi mở terminal mới)`}`);
   say({ systemd: 'Tự cập nhật: systemd --user, hằng ngày 10:17.', cron: 'Tự cập nhật: cron 10:17 hằng ngày (WSL: cron cần đang chạy; dự phòng: kiểm tra mỗi ngày khi gọi vnptnan-gate).',
     wrapper: 'Tự cập nhật: kiểm tra mỗi ngày một lần khi gọi vnptnan-gate (máy không có systemd/cron).' }[s.auto]);
-  say({ config: 'Hook: đăng ký cấp người dùng (git config --global hook.vnptnan-gate-*), áp cho mọi repo.',
+  say({ config: `Hook: đăng ký cấp người dùng (git config --global hook.vnptnan-gate-*), áp cho mọi repo${opt.hooksPath ? '; Git >= 2.54 nên không cần --hooks-path' : ''}.`,
     hooksPath: `Hook: core.hooksPath toàn cục -> ${hooksPathDir()} (hook riêng của repo vẫn chạy trước).`,
     repo: `Hook: Git ${gitVersion()} chưa hỗ trợ hook theo config (cần >= 2.54). Trong từng repo chạy: vnptnan-gate install-hooks\n      (hoặc cài lại với --hooks-path để áp cho mọi repo qua core.hooksPath)` }[s.hooks]);
   say('Kiểm tra: vnptnan-gate doctor');
